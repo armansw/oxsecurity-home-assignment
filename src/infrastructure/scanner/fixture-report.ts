@@ -1,6 +1,6 @@
-import fs from 'node:fs';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
+import { SyncedFileWriteStream } from '../fs/synced-write-stream.js';
 
 export type FixtureLayout = 'single-result' | 'many-results';
 
@@ -33,8 +33,9 @@ const LOREM =
 /**
  * Writes a synthetic, Trivy-shaped, pretty-printed JSON report of roughly `sizeMb` megabytes.
  *
- * The generator is itself memory-flat: content is produced lazily by an async generator and written through
- * `pipeline()`, which honours the file stream's backpressure. Only one ~64 KiB chunk exists at a time.
+ * The generator is itself memory-flat: content is produced lazily by a generator and written through
+ * `pipeline()`, which honours backpressure, so only one ~64 KiB chunk exists at a time. The file is written
+ * with periodic fdatasync so dirty page cache stays bounded inside a memory cgroup (see SyncedFileWriteStream).
  */
 export async function writeFixtureReport(opts: FixtureOptions): Promise<FixtureSummary> {
   const counts = { bytes: 0, total: 0, critical: 0 };
@@ -73,7 +74,7 @@ export async function writeFixtureReport(opts: FixtureOptions): Promise<FixtureS
     yield buf;
   }
 
-  await pipeline(Readable.from(chunks()), fs.createWriteStream(opts.path), opts.signal ? { signal: opts.signal } : {});
+  await pipeline(Readable.from(chunks()), new SyncedFileWriteStream(opts.path), opts.signal ? { signal: opts.signal } : {});
   return { ...counts };
 }
 

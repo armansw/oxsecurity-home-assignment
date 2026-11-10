@@ -25,7 +25,6 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     ...(deps.logger === false ? { logger: false } : { loggerInstance: deps.logger }),
     bodyLimit: 64 * 1024,
     trustProxy: true,
-    disableRequestLogging: false,
   });
 
   registerErrorHandling(app);
