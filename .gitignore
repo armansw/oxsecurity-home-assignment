@@ -9,3 +9,4 @@ data/
 fixtures/
 web/node_modules/
 web/dist/
+.cg-env/
