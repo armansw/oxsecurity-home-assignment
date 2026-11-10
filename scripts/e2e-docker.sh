@@ -8,7 +8,7 @@
 set -euo pipefail
 
 API="${API:-http://localhost:3000}"
-REPO="${REPO:-https://github.com/OWASP/NodeGoat}"
+REPO="${REPO:-https://github.com/armansw/NodeGoat}"   # the assignment's fork of OWASP/NodeGoat
 MODE="${1:-trivy}"
 TIMEOUT_S="${TIMEOUT_S:-900}"
 SERVICE="${SERVICE:-app}"

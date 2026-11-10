@@ -80,7 +80,7 @@ The first start downloads Trivy's vulnerability database (~1 min) into the `triv
 
 ```bash
 curl -s -X POST localhost:3000/api/scan -H 'content-type: application/json' \
-     -d '{"repoUrl":"https://github.com/<you>/NodeGoat"}'
+     -d '{"repoUrl":"https://github.com/armansw/NodeGoat"}'
 # → 202 {"scanId":"4d8cf725-…","status":"Queued"}
 
 curl -s localhost:3000/api/scan/4d8cf725-…
@@ -160,6 +160,8 @@ docker compose -f docker-compose.yml -f docker-compose.oom.yml up --build -d
 
 ### 3. Real NodeGoat scan, local, under the brief's command
 
+The target is the assignment's fork, [armansw/NodeGoat](https://github.com/armansw/NodeGoat), of OWASP/NodeGoat; both give identical results.
+
 ```
 POST /api/scan {"repoUrl":"https://github.com/OWASP/NodeGoat"}  → 202 Queued
 GET  /api/scan/<id>  → Finished in 2.2 s · 93 scanned · 12 CRITICAL · worker peak RSS 112 MB
@@ -225,7 +227,7 @@ Other behaviour:
 GraphiQL is served at `/graphiql` outside production. The schema is a superset of the brief's example. `status` is an enum, and the vulnerability list is paginated, with `first` clamped to 1–1000, so no single query can pull an unbounded list into memory.
 
 ```graphql
-mutation { startScan(repoUrl: "https://github.com/<you>/NodeGoat") { id status } }
+mutation { startScan(repoUrl: "https://github.com/armansw/NodeGoat") { id status } }
 
 query {
   scan(id: "…") {
