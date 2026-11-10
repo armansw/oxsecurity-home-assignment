@@ -71,6 +71,10 @@ jobs:
           docker compose $files up --build -d --wait app
       - name: Scan inside the 200 MB container
         run: ./scripts/e2e-docker.sh ${{ matrix.mode == 'fixture' && '--fixture' || '' }}
-      - name: Logs
+      - name: Diagnostics
         if: always()
-        run: docker compose logs --tail 200 app trivy
+        run: |
+          docker compose ps -a
+          docker inspect -f '{{json .State}}' $(docker compose ps -aq app) || true
+          sudo dmesg | grep -iE 'oom|killed process|memory cgroup' | tail -20 || true
+          docker compose logs --tail 200 app trivy

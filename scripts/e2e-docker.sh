@@ -37,7 +37,10 @@ echo "scanId=$scan_id"
 
 deadline=$((SECONDS + TIMEOUT_S)); status=""
 while (( SECONDS < deadline )); do
-  body="$(curl -fsS "$API/api/scan/$scan_id?limit=1")"
+  if ! body="$(curl -fsS "$API/api/scan/$scan_id?limit=1")"; then
+    echo "API unreachable — container state: $(docker inspect -f '{{json .State}}' "$container")"
+    break
+  fi
   status="$(sed -E 's/.*"status":"([A-Za-z]+)".*/\1/' <<<"$body")"
   printf '%s  %s\n' "$(date +%T)" "$(grep -oE '"(status|phase|progressPct)":("[^"]*"|[0-9]+|null)' <<<"$body" | tr '\n' ' ')"
   [[ "$status" == "Finished" || "$status" == "Failed" ]] && break
