@@ -92,7 +92,19 @@ Decisions and trade-offs: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Deployme
 
 CI runs it nightly and on `main`.
 
-<!-- LARGE-REPOS-RESULTS -->
+Result on the live deployment (systemd, `MemoryMax=200M`), 2026-11-10:
+
+| Repository | Commit | Findings | CRITICAL (service / Trivy) | Report | Worker peak RSS | Time |
+|---|---|---|---|---|---|---|
+| armansw/NodeGoat | `c5cb68a708` | 93 | 12 / 12 | 0.55 MB | 99 MB | 3 s |
+| snyk-labs/nodejs-goof | `add14ba59e` | 241 | 37 / 37 | 1.18 MB | 104 MB | 3 s |
+| vercel/next.js | `4d51724b7c` | 378 | 15 / 15 | 3.41 MB | 136 MB | 36 s |
+| microsoft/vscode | `c4966e9926` | 75 | 4 / 4 | 1.16 MB | 129 MB | 27 s |
+| grafana/grafana | `726b06e1db` | 26 | 0 / 0 | 2.78 MB | 128 MB | 22 s |
+| kubernetes/kubernetes | `e3e86e8988` | 10 | 0 / 0 | 0.89 MB | 129 MB | 45 s |
+| getsentry/sentry | `150fdac80a` | 15 | 0 / 0 | 0.55 MB | 123 MB | 30 s |
+
+7/7 exact matches and zero OOM kills. The cgroup reached its 200 MB limit on the big checkouts, but only with reclaimable file cache. Report size tracks findings, not repository size, so the 600 MB report test covers the huge-report case.
 
 ## Configuration
 
