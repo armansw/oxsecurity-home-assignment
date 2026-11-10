@@ -1,4 +1,5 @@
-# Code Guardian: API + worker under a 200 MB memory limit (Bonus C), Trivy server, React UI.
+# Code Guardian: the service (API + worker + stream parser) under a 200 MB memory limit (Bonus C), a scanner
+# container that runs git + Trivy with its own budget, the Trivy DB server, and the React UI.
 #
 #   docker compose up --build
 #   UI → http://localhost:8080   API → http://localhost:3000   GraphiQL → set NODE_ENV=development
@@ -25,13 +26,44 @@ services:
       # Disk-backed named volume. Never tmpfs: a 500 MB report on tmpfs is charged to this container's
       # memory limit and would OOM-kill it no matter how well the parser streams (docs/MEMORY.md).
       WORK_DIR: /work
-      TRIVY_SERVER_URL: http://trivy:4954
-      TRIVY_TOKEN: ${TRIVY_TOKEN:-change-me-local-token}
+      # git + Trivy run in the `scanner` container: their memory never counts against this limit, so a huge
+      # repository can neither starve nor OOM-kill the service. Run without SCANNER=remote to keep them in-process.
+      SCANNER: remote
+      SCANNER_URL: http://scanner:3001
+      SCANNER_TOKEN: ${SCANNER_TOKEN:-change-me-local-scanner-token}
       MIN_FREE_DISK_MB: ${MIN_FREE_DISK_MB:-1024}
     volumes:
       - app-data:/data
       - app-work:/work
     ports: ["3000:3000"]
+    depends_on:
+      scanner:
+        condition: service_healthy
+
+  # Runs git clone + trivy fs for the service on the shared work volume (internal network only, token-protected).
+  scanner:
+    build: .
+    init: true
+    mem_limit: 1g                    # sized for the largest repositories (git checkout + Trivy analysis)
+    memswap_limit: 1g
+    pids_limit: 256
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    stop_grace_period: 15s
+    environment:
+      ROLE: scanner
+      PORT: 3001
+      WORK_DIR: /work
+      TRIVY_SERVER_URL: http://trivy:4954
+      TRIVY_TOKEN: ${TRIVY_TOKEN:-change-me-local-token}
+      SCANNER_TOKEN: ${SCANNER_TOKEN:-change-me-local-scanner-token}
+    volumes:
+      - app-work:/work
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:3001/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
     depends_on:
       trivy:
         condition: service_healthy

@@ -28,15 +28,19 @@ describe('GitRepositoryFetcher', () => {
     const git = fakeBinary(
       dir,
       'git',
-      `if [ "$3" = rev-parse ]; then echo ${sha}; exit 0; fi; printf '%s\\n' "$@" > ${argsFile}; env > ${envFile}`,
+      `if [ "$3" = rev-parse ]; then echo ${sha}; exit 0; fi; printf '%s\\n' "$@" > ${argsFile}; env > ${envFile}; for a; do last=$a; done; mkdir -p "$last/.git/objects/pack" "$last/src"`,
     );
-    const result = await new GitRepositoryFetcher({ gitBin: git, timeoutMs: 5000 }).clone('https://github.com/a/b.git', '/tmp/dest', signal());
+    const dest = path.join(dir, 'dest');
+    const result = await new GitRepositoryFetcher({ gitBin: git, timeoutMs: 5000 }).clone('https://github.com/a/b.git', dest, signal());
     expect(result).toEqual({ commitSha: sha });
+    expect(fs.existsSync(path.join(dest, '.git'))).toBe(false); // packfile cache released before scanning
+    expect(fs.existsSync(path.join(dest, 'src'))).toBe(true); // working tree kept
     let text = '';
     for await (const chunk of fs.createReadStream(argsFile, 'utf8')) text += String(chunk);
     expect(text.trim().split('\n')).toEqual([
-      '-c', 'protocol.file.allow=never', '-c', 'credential.helper=', 'clone', '--depth', '1', '--single-branch',
-      '--no-tags', '--no-recurse-submodules', '--', 'https://github.com/a/b.git', '/tmp/dest',
+      '-c', 'protocol.file.allow=never', '-c', 'credential.helper=', '-c', 'pack.threads=1', '-c', 'core.deltaBaseCacheLimit=8m',
+      '-c', 'core.packedGitLimit=32m', '-c', 'core.packedGitWindowSize=1m', 'clone', '--depth', '1', '--single-branch',
+      '--no-tags', '--no-recurse-submodules', '--', 'https://github.com/a/b.git', dest,
     ]);
     let env = '';
     for await (const chunk of fs.createReadStream(envFile, 'utf8')) env += String(chunk);
@@ -95,7 +99,7 @@ describe('TrivyScanner', () => {
     const bin = fakeBinary(
       dir,
       'trivy',
-      `printf '%s\\n' "$@" > ${argsFile}; env | grep -E '^(GOMEMLIMIT|TMPDIR)=' >> ${argsFile}; while [ $# -gt 0 ]; do if [ "$1" = --output ]; then echo '{}' > "$2"; fi; shift; done`,
+      `printf '%s\\n' "$@" > ${argsFile}; env | grep -E '^(GOMEMLIMIT|GOGC|TMPDIR)=' >> ${argsFile}; while [ $# -gt 0 ]; do if [ "$1" = --output ]; then echo '{}' > "$2"; fi; shift; done`,
     );
     const reportPath = path.join(dir, 'report.json');
     await scanner(bin, { serverUrl: 'http://trivy:4954', token: 't0k' }).scan({ sourceDir: '/src', reportPath, tmpDir: '/tmpdir', signal: signal() });
@@ -103,7 +107,7 @@ describe('TrivyScanner', () => {
     for await (const chunk of fs.createReadStream(argsFile, 'utf8')) text += String(chunk);
     const lines = text.trim().split('\n');
     expect(lines).toEqual(
-      expect.arrayContaining(['fs', '--scanners', 'vuln', '--format', 'json', '--output', reportPath, '--server', 'http://trivy:4954', '--token', 't0k', '/src', 'GOMEMLIMIT=64MiB', 'TMPDIR=/tmpdir']),
+      expect.arrayContaining(['fs', '--scanners', 'vuln', '--format', 'json', '--output', reportPath, '--server', 'http://trivy:4954', '--token', 't0k', '/src', 'GOMEMLIMIT=64MiB', 'GOGC=50', 'TMPDIR=/tmpdir']),
     );
     expect(lines).not.toContain('--severity');
   });

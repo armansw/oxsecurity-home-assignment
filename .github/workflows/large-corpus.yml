@@ -1,0 +1,64 @@
+name: Large-repository corpus
+
+# 152 large repositories (test/large/corpus.tsv), 8 parallel shards. Each shard submits all of its repositories
+# at once to a service container held at 150 MB, then verifies every CRITICAL finding against an independent
+# Trivy run on the same commit. Strict mode fails on any OOM kill or on ever touching the hard limit.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "41 2 * * 0"   # weekly, against fresh upstream commits
+
+permissions:
+  contents: read
+
+jobs:
+  shard:
+    name: shard ${{ matrix.shard }}/8
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Free disk space for multi-GB clones
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL && df -h /
+      - name: Install the same Trivy (checksum verified) for the independent ground truth
+        run: |
+          V=0.76.1; cd "$RUNNER_TEMP"
+          curl -fsSLO "https://github.com/aquasecurity/trivy/releases/download/v$V/trivy_${V}_Linux-64bit.tar.gz"
+          curl -fsSLO "https://github.com/aquasecurity/trivy/releases/download/v$V/trivy_${V}_checksums.txt"
+          grep "Linux-64bit.tar.gz$" "trivy_${V}_checksums.txt" | sha256sum -c -
+          tar xzf "trivy_${V}_Linux-64bit.tar.gz" trivy && sudo install -m755 trivy /usr/local/bin/trivy
+      - name: Start stack (service limited to 150 MB; scanner container separate)
+        run: docker compose -f docker-compose.yml -f docker-compose.150m.yml -f docker-compose.large.yml up --build -d --wait app
+      - name: Burst-scan the shard and verify every CRITICAL finding
+        run: |
+          mkdir -p "results/shard-${{ matrix.shard }}"
+          python3 -u scripts/large_repos_e2e.py --repos test/large/corpus.tsv --shard ${{ matrix.shard }}/8 --burst --strict-limit \
+            --api http://localhost:3000 --trivy-server http://localhost:4954 --trivy-token change-me-local-token \
+            --container "$(docker compose ps -q app)" --json-out "results/shard-${{ matrix.shard }}/result.json"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: shard-${{ matrix.shard }}
+          path: results/
+      - name: Diagnostics
+        if: always()
+        run: |
+          docker compose ps -a
+          sudo dmesg | grep -iE 'oom|killed process|memory cgroup' | tail -20 || true
+          docker compose logs --tail 80 app scanner
+
+  merge:
+    needs: [shard]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          path: results
+      - name: Merged report
+        run: python3 scripts/merge_large_results.py results/*/*/result.json

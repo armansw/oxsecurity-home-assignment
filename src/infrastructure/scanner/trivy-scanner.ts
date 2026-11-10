@@ -10,8 +10,10 @@ export interface TrivyScannerOptions {
   /** Client/server mode (ADR-3): the vulnerability DB lives in the server, the client stays small. */
   readonly serverUrl?: string | undefined;
   readonly token?: string | undefined;
-  /** Go soft memory limit for the Trivy process, e.g. `64MiB`. */
+  /** Go soft memory limit for the Trivy process, e.g. `48MiB`. */
   readonly goMemLimit: string;
+  /** Go GC target percentage (GOGC) for the Trivy process. */
+  readonly goGc?: number;
 }
 
 /**
@@ -49,7 +51,9 @@ export class TrivyScanner implements Scanner {
         // Trivy enforces its own --timeout; ours is the hard backstop.
         timeoutMs: this.opts.timeoutMs + 30_000,
         signal,
-        env: baseChildEnv({ GOMEMLIMIT: this.opts.goMemLimit, TMPDIR: tmpDir }),
+        // Under memory pressure the kernel kills Trivy, never the service (classified as SCANNER_KILLED).
+        oomScoreAdj: 1000,
+        env: baseChildEnv({ GOMEMLIMIT: this.opts.goMemLimit, GOGC: String(this.opts.goGc ?? 50), TMPDIR: tmpDir }),
       });
     } catch (err) {
       throw classifyTrivyError(err);

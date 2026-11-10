@@ -6,11 +6,15 @@
  *   ROLE=worker node dist/index.js                     # background processing only
  */
 import { mkdir } from 'node:fs/promises';
+import type { FastifyBaseLogger } from 'fastify';
 import { pino } from 'pino';
 import { ScanProcessor } from './application/scan.processor.js';
 import { ScanService } from './application/scan.service.js';
 import { loadConfig } from './config/env.js';
-import type { Scanner } from './domain/ports.js';
+import type { RepositoryFetcher, Scanner } from './domain/ports.js';
+import { RemoteScanAgent } from './infrastructure/scanner/remote-scan-agent.js';
+import { buildScannerAgentApp } from './interfaces/http/scanner-agent.js';
+import type { Config } from './config/env.js';
 import { openDatabase } from './infrastructure/db/sqlite.js';
 import { SqliteScanStore } from './infrastructure/db/sqlite-scan.store.js';
 import { DiskWorkspace } from './infrastructure/fs/disk-workspace.js';
@@ -28,20 +32,23 @@ async function main(): Promise<void> {
   const log = pino({ level: config.LOG_LEVEL, base: { role: config.ROLE } });
 
   await mkdir(config.WORK_DIR, { recursive: true });
+  if (config.ROLE === 'scanner') {
+    await runScannerAgent(config, log);
+    return;
+  }
   const store = new SqliteScanStore(openDatabase(config.DATABASE_PATH));
   const workspace = new DiskWorkspace(config.WORK_DIR, config.MIN_FREE_DISK_MB * 1024 * 1024, log);
 
+  const remote =
+    config.SCANNER === 'remote' && config.SCANNER_URL !== undefined && config.SCANNER_TOKEN !== undefined
+      ? new RemoteScanAgent({ url: config.SCANNER_URL, token: config.SCANNER_TOKEN })
+      : undefined;
   const scanner: Scanner =
-    config.SCANNER === 'fixture'
+    remote ??
+    (config.SCANNER === 'fixture'
       ? new FixtureScanner({ sizeMb: config.FIXTURE_SIZE_MB, criticalRatio: config.FIXTURE_CRITICAL_RATIO })
-      : new TrivyScanner({
-          trivyBin: config.TRIVY_BIN,
-          timeoutMs: config.SCAN_TIMEOUT_MS,
-          cacheDir: config.trivyCacheDir,
-          serverUrl: config.TRIVY_SERVER_URL,
-          token: config.TRIVY_TOKEN,
-          goMemLimit: config.TRIVY_GOMEMLIMIT,
-        });
+      : localTrivy(config));
+  const fetcher: RepositoryFetcher = remote ?? new GitRepositoryFetcher({ gitBin: config.GIT_BIN, timeoutMs: config.CLONE_TIMEOUT_MS });
 
   const metrics = new PrometheusMetrics(store);
   const runsWorker = config.ROLE !== 'api';
@@ -59,7 +66,7 @@ async function main(): Promise<void> {
               workspace,
               log: log.child({ component: 'processor' }),
               metrics,
-              fetcher: new GitRepositoryFetcher({ gitBin: config.GIT_BIN, timeoutMs: config.CLONE_TIMEOUT_MS }),
+              fetcher,
               scanner,
               reports: new StreamReportProcessor(store, { batchSize: config.BATCH_SIZE, maxValueBytes: config.MAX_JSON_VALUE_BYTES }),
             },
@@ -151,6 +158,37 @@ async function main(): Promise<void> {
   };
   for (const sig of ['SIGTERM', 'SIGINT'] as const) {
     process.once(sig, () => void shutdown(sig));
+  }
+}
+
+function localTrivy(config: Config): TrivyScanner {
+  return new TrivyScanner({
+    trivyBin: config.TRIVY_BIN,
+    timeoutMs: config.SCAN_TIMEOUT_MS,
+    cacheDir: config.trivyCacheDir,
+    serverUrl: config.TRIVY_SERVER_URL,
+    token: config.TRIVY_TOKEN,
+    goMemLimit: config.TRIVY_GOMEMLIMIT,
+    goGc: config.TRIVY_GOGC,
+  });
+}
+
+/** ROLE=scanner: run git + Trivy for the service, in this container's own memory budget. */
+async function runScannerAgent(config: Config, log: FastifyBaseLogger): Promise<void> {
+  const app = buildScannerAgentApp({
+    fetcher: new GitRepositoryFetcher({ gitBin: config.GIT_BIN, timeoutMs: config.CLONE_TIMEOUT_MS }),
+    scanner: localTrivy(config),
+    workDir: config.WORK_DIR,
+    token: config.SCANNER_TOKEN ?? '',
+    allowedHosts: config.ALLOWED_GIT_HOSTS,
+    logger: log,
+  });
+  await app.listen({ host: config.HOST, port: config.PORT });
+  for (const sig of ['SIGTERM', 'SIGINT'] as const) {
+    process.once(sig, () => {
+      log.info({ signal: sig }, 'scanner agent shutting down');
+      void app.close().then(() => process.exit(0));
+    });
   }
 }
 

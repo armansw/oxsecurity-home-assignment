@@ -214,6 +214,7 @@ cmd_start() {
       PORT="$api_port" HOST=127.0.0.1 ROLE=all LOG_LEVEL="${LOG_LEVEL:-info}" \
       DATABASE_PATH="$ENV_DIR/data/code-guardian.db" WORK_DIR="$ENV_DIR/work" \
       TRIVY_BIN="$TRIVY_BIN" TRIVY_CACHE_DIR="$ENV_DIR/trivy-cache" MIN_FREE_DISK_MB="${MIN_FREE_DISK_MB:-1024}" \
+      NODE_OPTIONS="${NODE_OPTIONS:---max-semi-space-size=2}" \
       node --max-old-space-size=150 dist/index.js) > "$ENV_DIR/logs/api.log" 2>&1 &
   PIDS="$PIDS $!"
   wait_http "http://127.0.0.1:$api_port/healthz" 30 || { tail -20 "$ENV_DIR/logs/api.log" >&2; die "API did not start (log: .cg-env/logs/api.log)"; }

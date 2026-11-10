@@ -67,6 +67,8 @@ The file-backed part is mostly the 176 MB binary and the memory-mapped vulnerabi
 
 One caveat. Trivy marshals its report from an in-memory structure, so producing a *genuinely* 500 MB report needs far more than 200 MB inside Trivy itself. At that scale, Trivy runs outside the constrained pod (a scan job or a bigger sidecar) and hands over the file. The constraint this service is built for, and what the assignment tests, is *consuming* such a report. The fixture scanner models exactly that hand-over.
 
+**Measured outcome on large repositories.** With git and Trivy inside a 150 MB cap shared with the service, kubernetes either stalled the API under memory throttling or got Trivy OOM-killed. systemd's default `OOMPolicy=stop` then stopped the whole service. The service now (a) spawns git and Trivy with `oom_score_adj=1000`, so they are always the OOM killer's choice, (b) runs with `OOMPolicy=continue`, and (c) in the default Compose and live topologies, delegates git and Trivy to a separate scanner container (ADR-8). Result: the service peaks at 129 MiB including page cache on the same repositories, without ever reaching the 150 MiB limit.
+
 ### 6. The dirty-page-cache trap (found by CI)
 
 Page cache is charged to the container's memory cgroup. Clean pages are reclaimable; **dirty** pages are not reclaimable until they have been written back. The first CI run of the 600 MB fixture inside the 200 MB container was OOM-killed while *writing* the report. The kernel log showed:

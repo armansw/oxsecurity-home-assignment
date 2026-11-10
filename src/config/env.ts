@@ -9,8 +9,11 @@ const EnvSchema = z.object({
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
   HOST: z.string().default('0.0.0.0'),
   PORT: int(3000, 0).pipe(z.number().max(65_535)),
-  /** all = API + worker in one process (default, so `node dist/index.js` is a complete system). */
-  ROLE: z.enum(['all', 'api', 'worker']).default('all'),
+  /**
+   * all = API + worker in one process (default, so `node dist/index.js` is a complete system).
+   * scanner = internal agent that runs git + Trivy in its own container (pair with SCANNER=remote).
+   */
+  ROLE: z.enum(['all', 'api', 'worker', 'scanner']).default('all'),
   /**
    * Which proxies may set X-Forwarded-For (client IP for rate limiting). `false` (default) when the port is
    * exposed directly; `true` or an address list such as `loopback` / `127.0.0.1` behind a reverse proxy.
@@ -24,13 +27,19 @@ const EnvSchema = z.object({
   /** Must be disk-backed. A tmpfs workspace charges the report to the memory cgroup (docs/MEMORY.md). */
   WORK_DIR: z.string().min(1).default(path.join(os.tmpdir(), 'code-guardian')),
 
-  SCANNER: z.enum(['trivy', 'fixture']).default('trivy'),
+  /** trivy = git + Trivy as child processes; remote = via the scanner agent; fixture = synthetic report. */
+  SCANNER: z.enum(['trivy', 'fixture', 'remote']).default('trivy'),
+  SCANNER_URL: z.url().optional(),
+  /** Shared secret between the service and the scanner agent. */
+  SCANNER_TOKEN: z.string().min(16).optional(),
   TRIVY_BIN: z.string().min(1).default('trivy'),
   TRIVY_SERVER_URL: z.url().optional(),
   TRIVY_TOKEN: z.string().optional(),
   TRIVY_CACHE_DIR: z.string().optional(),
   /** Go soft heap limit for the Trivy child process. */
-  TRIVY_GOMEMLIMIT: z.string().regex(/^\d+(B|KiB|MiB|GiB)$/).default('64MiB'),
+  TRIVY_GOMEMLIMIT: z.string().regex(/^\d+(B|KiB|MiB|GiB)$/).default('48MiB'),
+  /** Go GC target for the Trivy child; below 100 trades CPU for a smaller heap. */
+  TRIVY_GOGC: int(50, 1),
   GIT_BIN: z.string().min(1).default('git'),
   CLONE_TIMEOUT_MS: int(300_000, 1000),
   SCAN_TIMEOUT_MS: int(1_200_000, 1000),
@@ -76,5 +85,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     throw new Error(`Invalid configuration: ${issues}`);
   }
   const e = parsed.data;
+  if (e.SCANNER === 'remote' && (e.SCANNER_URL === undefined || e.SCANNER_TOKEN === undefined)) {
+    throw new Error('Invalid configuration: SCANNER=remote requires SCANNER_URL and SCANNER_TOKEN');
+  }
+  if (e.ROLE === 'scanner' && e.SCANNER_TOKEN === undefined) {
+    throw new Error('Invalid configuration: ROLE=scanner requires SCANNER_TOKEN');
+  }
   return Object.freeze({ ...e, trivyCacheDir: e.TRIVY_CACHE_DIR ?? path.join(e.WORK_DIR, '.trivy-cache') });
 }

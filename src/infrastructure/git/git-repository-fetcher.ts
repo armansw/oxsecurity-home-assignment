@@ -1,3 +1,5 @@
+import { rm } from 'node:fs/promises';
+import path from 'node:path';
 import { ScanError } from '../../domain/errors.js';
 import type { RepositoryFetcher } from '../../domain/ports.js';
 import { CommandError, baseChildEnv, isNoSpaceMessage, runCommand } from '../process/run-command.js';
@@ -18,6 +20,11 @@ export class GitRepositoryFetcher implements RepositoryFetcher {
       // Refuse local-file transport even via redirects/submodules; no credential helper prompts.
       '-c', 'protocol.file.allow=never',
       '-c', 'credential.helper=',
+      // Low-memory clone: one indexing thread and small caches. git shares the container's memory limit.
+      '-c', 'pack.threads=1',
+      '-c', 'core.deltaBaseCacheLimit=8m',
+      '-c', 'core.packedGitLimit=32m',
+      '-c', 'core.packedGitWindowSize=1m',
       'clone',
       '--depth', '1',
       '--single-branch',
@@ -36,7 +43,7 @@ export class GitRepositoryFetcher implements RepositoryFetcher {
       GIT_LFS_SKIP_SMUDGE: '1',
     });
     try {
-      await runCommand(this.opts.gitBin, { args, timeoutMs: this.opts.timeoutMs, signal, env });
+      await runCommand(this.opts.gitBin, { args, timeoutMs: this.opts.timeoutMs, signal, env, oomScoreAdj: 1000 });
       // Record exactly what was scanned: results are only meaningful together with the commit they describe.
       const out = await runCommand(this.opts.gitBin, {
         args: ['-C', destDir, 'rev-parse', 'HEAD'],
@@ -49,6 +56,10 @@ export class GitRepositoryFetcher implements RepositoryFetcher {
       if (!/^[0-9a-f]{40}([0-9a-f]{24})?$/.test(commitSha)) {
         throw new ScanError('CLONE_FAILED', 'Could not determine the cloned commit', true);
       }
+      // Trivy never reads .git, but its packfile is often hundreds of MB that were just written and sit in the
+      // page cache, which is charged to the container's memory limit. Deleting it drops that cache (and the
+      // disk usage) immediately, before Trivy starts.
+      await rm(path.join(destDir, '.git'), { recursive: true, force: true });
       return { commitSha };
     } catch (err) {
       throw classifyGitError(err);

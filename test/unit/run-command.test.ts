@@ -77,6 +77,11 @@ describe('runCommand', () => {
     await expect(sh('echo hidden')).resolves.toBe('');
   });
 
+  it.runIf(process.platform === 'linux')('marks the child as the OOM killer\'s first victim', async () => {
+    await expect(sh('sleep 0.3; cat /proc/$$/oom_score_adj', { captureStdout: 16, oomScoreAdj: 1000 })).resolves.toBe('1000\n');
+    await expect(sh('cat /proc/$$/oom_score_adj', { captureStdout: 16 })).resolves.not.toBe('1000\n');
+  });
+
   it('errno is undefined for non-spawn failures', async () => {
     const err = (await sh('exit 1').catch((e: unknown) => e)) as CommandError;
     expect(err.errno).toBeUndefined();

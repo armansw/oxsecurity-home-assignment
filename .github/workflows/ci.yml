@@ -107,7 +107,7 @@ jobs:
         run: ./scripts/smoke-run.sh
 
   large-repos:
-    name: large repositories, verified against Trivy (mem_limit 200m)
+    name: large repositories, verified against Trivy (service at 150m, strict)
     needs: [backend]
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
@@ -123,11 +123,11 @@ jobs:
           curl -fsSLO "https://github.com/aquasecurity/trivy/releases/download/v$V/trivy_${V}_checksums.txt"
           grep "Linux-64bit.tar.gz$" "trivy_${V}_checksums.txt" | sha256sum -c -
           tar xzf "trivy_${V}_Linux-64bit.tar.gz" trivy && sudo install -m755 trivy /usr/local/bin/trivy
-      - name: Start stack (app limited to 200 MB)
-        run: docker compose -f docker-compose.yml -f docker-compose.large.yml up --build -d --wait app
+      - name: Start stack (service limited to 150 MB; git + Trivy in the scanner container)
+        run: docker compose -f docker-compose.yml -f docker-compose.150m.yml -f docker-compose.large.yml up --build -d --wait app
       - name: Scan large repositories and verify every CRITICAL finding
         run: |
-          python3 -u scripts/large_repos_e2e.py --api http://localhost:3000 \
+          python3 -u scripts/large_repos_e2e.py --strict-limit --api http://localhost:3000 \
             --trivy-server http://localhost:4954 --trivy-token change-me-local-token \
             --container "$(docker compose ps -q app)" --json-out large-repos.json
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

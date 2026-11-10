@@ -1,5 +1,10 @@
-# Large-repository e2e (scripts/large_repos_e2e.py): publish the Trivy server on localhost so the independent
-# ground-truth run uses the same vulnerability DB as the service.
+# Large-repository load test (scripts/large_repos_e2e.py):
+# - publish the Trivy server on localhost so the independent ground-truth run uses the same vulnerability DB;
+# - allow a whole shard to be submitted at once (queue cap and per-IP rate limit raised for the test client).
 services:
   trivy:
     ports: ["127.0.0.1:4954:4954"]
+  app:
+    environment:
+      MAX_QUEUED: 1000
+      RATE_LIMIT_PER_MIN: 10000

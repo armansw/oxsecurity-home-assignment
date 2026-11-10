@@ -1,0 +1,33 @@
+[Unit]
+Description=Code Guardian - scanner agent (git + Trivy, own memory budget)
+After=network-online.target code-guardian-trivy.service
+Wants=network-online.target code-guardian-trivy.service
+
+[Service]
+WorkingDirectory=/opt/code-guardian
+EnvironmentFile=/etc/code-guardian/env
+Environment=NODE_ENV=production ROLE=scanner HOST=127.0.0.1 PORT=8796 LOG_LEVEL=info
+Environment=WORK_DIR=/var/lib/code-guardian/work HOME=/var/lib/code-guardian
+Environment=TRIVY_SERVER_URL=http://127.0.0.1:4954 TRIVY_BIN=/usr/local/bin/trivy GIT_BIN=/usr/bin/git
+Environment=NODE_OPTIONS=--max-semi-space-size=2
+ExecStart=/usr/bin/node --max-old-space-size=150 dist/index.js
+User=codeguardian
+Group=codeguardian
+# Shares the service's work volume; created by code-guardian.service (StateDirectory).
+ReadWritePaths=/var/lib/code-guardian/work
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=15
+KillMode=mixed
+MemoryMax=1G
+MemorySwapMax=0
+OOMPolicy=continue
+CPUQuota=60%
+Nice=10
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

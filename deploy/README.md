@@ -10,9 +10,12 @@ How the live demo at https://oxhometask.armstep.com runs, on a shared host witho
 | non-root user, `no-new-privileges` | `DynamicUser=yes`, `NoNewPrivileges=yes`, `ProtectSystem=strict` |
 | named volumes `app-data`, `app-work` (disk-backed) | `StateDirectory=code-guardian` → `/var/lib/code-guardian` |
 | `trivy` sidecar | `code-guardian-trivy.service`, listening on `127.0.0.1:4954` only |
+| `scanner` container (git + Trivy) | `code-guardian-scanner.service` (`ROLE=scanner`, `127.0.0.1:8796`, `MemoryMax=1G`) |
+| — | the service itself: `MemoryMax=150M`, `MemoryHigh=130M`, `OOMPolicy=continue` |
 
-The Trivy client and git run *inside* `code-guardian.service`'s cgroup, so the 200 MB budget covers them too,
-exactly as in the container.
+git and Trivy run in `code-guardian-scanner.service`, so the service's 150 MB budget covers only the service.
+Both units run as the static `codeguardian` user and share `/var/lib/code-guardian/work`
+(`useradd --system codeguardian`; `SCANNER_TOKEN` in `/etc/code-guardian/env`).
 
 ```bash
 # release
@@ -22,8 +25,8 @@ mkdir -p /opt/code-guardian && cp -r dist package.json package-lock.json /opt/co
 (cd web && npx vite build --outDir /var/www/oxhometask --emptyOutDir)
 
 # services (TRIVY_TOKEN lives in /etc/code-guardian/env, mode 600)
-cp deploy/systemd/*.service /etc/systemd/system/ && systemctl daemon-reload
-systemctl enable --now code-guardian-trivy code-guardian
+cp deploy/systemd/*.service /etc/systemd/system/ && systemctl daemon-reload   # trivy, scanner, service
+systemctl enable --now code-guardian-trivy code-guardian code-guardian-scanner
 
 # proxy: append deploy/Caddyfile.snippet to /etc/caddy/Caddyfile, then
 caddy validate --config /etc/caddy/Caddyfile && systemctl reload caddy

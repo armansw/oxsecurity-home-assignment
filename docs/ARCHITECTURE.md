@@ -176,3 +176,15 @@ The file-backed memory is the 176 MB binary plus the mmapped DB. The real differ
 **ADR-6: results are typed columns, not JSON blobs.** Reading results back needs no `JSON.parse` anywhere, and keyset pagination by `row_id` is index-only.
 
 **ADR-7: worker concurrency 1 by default.** Every job owns a git process, a Trivy process and a parse. In a 200 MB container, concurrency is a memory budget, not a throughput setting. Scale out with more worker containers instead.
+
+**ADR-8: git and Trivy run in their own container (`ROLE=scanner`).** *Context:* measured on kubernetes and next.js, the scan phase needs Node (~75 MiB) and Trivy (~60 MiB) at the same time, plus the hot pages of both binaries. At a 150 MB cap shared with the service, the kernel had to throttle the API (two-minute stalls) or kill Trivy. *Decision:* the service keeps the queue, the stream parser and the API, and calls an internal agent (same image, `ROLE=scanner`) that runs git and Trivy on the shared work volume. The agent is token-protected, localhost or internal-network only, and validates that every path is a scan workspace. Outcomes travel in status codes and headers, so nothing is JSON-parsed. A disconnect kills the children. *Consequences:* the service stays under 150 MB including page cache; the scanner gets a budget sized for the largest repositories. One more container to run. In-process mode (`SCANNER=trivy`) remains the default for `node dist/index.js`.
+
+**Defence in depth for memory**, kept in either topology:
+
+| Measure | Effect |
+|---|---|
+| git and Trivy spawned with `oom_score_adj=1000` | The kernel's OOM killer always picks a scanner child, never the service. The scan fails as `SCANNER_KILLED` and is retried. |
+| `OOMPolicy=continue` (systemd) | A child's OOM kill doesn't stop the unit. systemd's default would take the API down with it. |
+| `MemoryHigh` below `MemoryMax` (systemd); Memory QoS in Kubernetes | Page cache is reclaimed before the hard limit is reached. |
+| `.git` deleted right after the clone | The packfile's disk use and page cache are released before scanning. |
+| Low-memory git (`pack.threads=1`, small caches), Trivy `GOGC=50` / `GOMEMLIMIT=48MiB`, V8 `--max-semi-space-size=2` | Smaller peaks. The V8 setting costs about 25 % parse throughput for about 25 MB of RSS. |

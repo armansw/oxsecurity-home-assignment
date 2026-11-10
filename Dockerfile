@@ -31,6 +31,9 @@ COPY package.json ./
 RUN mkdir -p /data /work && chown node:node /data /work
 USER node
 ENV DATABASE_PATH=/data/code-guardian.db WORK_DIR=/work PORT=3000
+# Cap V8's young generation at 2 MB per semi-space: about 25 MB less RSS for about 25 % slower parsing
+# (measured). In a 200 MB limit that also holds git and Trivy, memory is the constraint, not throughput.
+ENV NODE_OPTIONS=--max-semi-space-size=2
 EXPOSE 3000
 # curl (a few MB) rather than `node -e fetch(...)`: a second Node process would cost ~40 MB inside the
 # container's memory limit every 30 s.

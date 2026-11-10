@@ -1,4 +1,5 @@
 import { spawn } from 'node:child_process';
+import { writeFile } from 'node:fs/promises';
 
 export type CommandFailureKind = 'spawn' | 'exit' | 'timeout' | 'aborted';
 
@@ -37,6 +38,12 @@ export interface RunOptions {
   readonly killGraceMs?: number;
   /** Capture up to this many bytes of stdout and resolve with it (default: stdout is discarded). */
   readonly captureStdout?: number;
+  /**
+   * Linux OOM-killer preference for the child (-1000..1000). 1000 makes the kernel kill this child first when
+   * the container runs out of memory, so an oversized scan fails on its own instead of taking the service down.
+   * Raising a child's score needs no privileges.
+   */
+  readonly oomScoreAdj?: number;
 }
 
 /**
@@ -67,6 +74,12 @@ export function runCommand(command: string, opts: RunOptions): Promise<string> {
       detached: true,
       shell: false,
     });
+
+    if (opts.oomScoreAdj !== undefined && child.pid !== undefined && process.platform === 'linux') {
+      writeFile(`/proc/${child.pid}/oom_score_adj`, String(opts.oomScoreAdj)).catch(() => {
+        // Child already exited, or /proc is unavailable: nothing to protect.
+      });
+    }
 
     let stdout = '';
     const stdoutLimit = opts.captureStdout ?? 0;

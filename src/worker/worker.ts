@@ -58,7 +58,7 @@ export class Worker {
       setInterval(() => {
         this.reap();
       }, Math.max(100, Math.floor(this.opts.staleAfterMs / 2))),
-      setInterval(() => void this.janitor(), this.opts.janitorIntervalMs ?? 60 * 60 * 1000),
+      setInterval(() => void this.janitor(), this.opts.janitorIntervalMs ?? 10 * 60 * 1000),
     );
     for (const t of this.timers) t.unref();
     for (let i = 0; i < this.opts.concurrency; i += 1) this.loops.push(this.loop(`${this.id}#${i}`));
@@ -115,7 +115,11 @@ export class Worker {
   private reap(): void {
     try {
       const { requeued, failed } = this.deps.store.reclaimStale(this.now() - this.opts.staleAfterMs, this.opts.maxAttempts);
-      if (requeued + failed > 0) this.deps.log.warn({ requeued, failed }, 'reclaimed scans from unresponsive workers');
+      if (requeued + failed > 0) {
+        this.deps.log.warn({ requeued, failed }, 'reclaimed scans from unresponsive workers');
+        // A dead worker cannot delete its workspace: reclaim the disk now rather than at the next janitor run.
+        void this.janitor();
+      }
     } catch (err) {
       this.deps.log.error({ err }, 'reaper failed');
     }

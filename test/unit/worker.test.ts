@@ -60,6 +60,22 @@ describe('Worker', () => {
     await waitFor(() => store.findById(id)?.status === 'Finished', 3000);
   });
 
+  it('removes the workspace left by a crashed worker as soon as its scan is reclaimed', async () => {
+    const id = store.create('x').id;
+    store.claimNext('dead-worker');
+    // The dead worker's workspace, and a scan that already exhausted its attempts.
+    store.requeue(id, 'dead-worker', { runAfter: 0, refundAttempt: false });
+    store.claimNext('dead-worker');
+    store.requeue(id, 'dead-worker', { runAfter: 0, refundAttempt: false });
+    store.claimNext('dead-worker');
+    const leftover = `${dir}/scan-${id}`;
+    fs.mkdirSync(leftover);
+    const { worker: w } = build(undefined, { pollMs: 60_000, staleAfterMs: 200, maxAttempts: 2, janitorIntervalMs: 3_600_000 });
+    w.start();
+    await waitFor(() => store.findById(id)?.status === 'Failed' && !fs.existsSync(leftover), 3000);
+    expect(store.findById(id)?.error?.code).toBe('WORKER_CRASHED');
+  });
+
   it('reaps stale leases from crashed workers and finishes them', async () => {
     const id = store.create('x').id;
     store.claimNext('dead-worker'); // heartbeat at now, never renewed

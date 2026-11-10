@@ -21,11 +21,12 @@ services:
       ROLE: worker
       DATABASE_PATH: /data/code-guardian.db
       WORK_DIR: /work
-      TRIVY_SERVER_URL: http://trivy:4954
-      TRIVY_TOKEN: ${TRIVY_TOKEN:-change-me-local-token}
+      SCANNER: remote
+      SCANNER_URL: http://scanner:3001
+      SCANNER_TOKEN: ${SCANNER_TOKEN:-change-me-local-scanner-token}
     volumes:
       - app-data:/data
       - app-work:/work
     depends_on:
-      trivy:
+      scanner:
         condition: service_healthy

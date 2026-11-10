@@ -1,25 +1,35 @@
 [Unit]
-Description=Code Guardian - scan API + worker (oxhometask.armstep.com)
-After=network-online.target code-guardian-trivy.service
-Wants=network-online.target code-guardian-trivy.service
+Description=Code Guardian - scan API + worker + stream parser (oxhometask.armstep.com)
+After=network-online.target code-guardian-scanner.service
+Wants=network-online.target code-guardian-scanner.service
 
 [Service]
 WorkingDirectory=/opt/code-guardian
 EnvironmentFile=/etc/code-guardian/env
 Environment=NODE_ENV=production ROLE=all HOST=127.0.0.1 PORT=8795 LOG_LEVEL=info TRUST_PROXY=loopback
 Environment=DATABASE_PATH=/var/lib/code-guardian/code-guardian.db WORK_DIR=/var/lib/code-guardian/work
-Environment=TRIVY_SERVER_URL=http://127.0.0.1:4954 TRIVY_BIN=/usr/local/bin/trivy GIT_BIN=/usr/bin/git
+# git + Trivy run in code-guardian-scanner.service, with their own memory budget.
+Environment=SCANNER=remote SCANNER_URL=http://127.0.0.1:8796
 Environment=HOME=/var/lib/code-guardian MIN_FREE_DISK_MB=2048 MAX_QUEUED=10 RATE_LIMIT_PER_MIN=10
-# The brief's self-test command, inside the same 200 MB / no-swap limit as docker-compose (mem_limit: 200m).
+Environment=NODE_OPTIONS=--max-semi-space-size=2
+# The brief's self-test command. The service alone is held under 150 MB in total (hard limit, no swap),
+# page cache included.
 ExecStart=/usr/bin/node --max-old-space-size=150 dist/index.js
-DynamicUser=yes
+User=codeguardian
+Group=codeguardian
 StateDirectory=code-guardian
 Restart=on-failure
 RestartSec=5
 TimeoutStopSec=15
 KillMode=mixed
-MemoryMax=200M
+# Soft limit below the hard one: above it the kernel reclaims page cache early (and throttles instead of
+# killing), so total memory including cache stays under MemoryMax. Kubernetes Memory QoS sets the same knob.
+MemoryHigh=130M
+MemoryMax=150M
 MemorySwapMax=0
+# If the kernel OOM-kills a child (git/Trivy on an oversized repo), keep the service running: the scan fails with
+# SCANNER_KILLED instead. systemd's default (stop) would take the whole API down with the child.
+OOMPolicy=continue
 CPUQuota=60%
 Nice=10
 NoNewPrivileges=yes

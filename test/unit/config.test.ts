@@ -16,7 +16,8 @@ describe('loadConfig', () => {
       WORKER_CONCURRENCY: 1,
       BATCH_SIZE: 500,
       ALLOWED_GIT_HOSTS: ['github.com'],
-      TRIVY_GOMEMLIMIT: '64MiB',
+      TRIVY_GOMEMLIMIT: '48MiB',
+      TRIVY_GOGC: 50,
       WORK_DIR: path.join(os.tmpdir(), 'code-guardian'),
     });
     expect(c.trivyCacheDir).toBe(path.join(c.WORK_DIR, '.trivy-cache'));
