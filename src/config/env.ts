@@ -42,6 +42,8 @@ const EnvSchema = z.object({
 
   MAX_ATTEMPTS: int(3, 1),
   MAX_QUEUED: int(100, 1),
+  /** Opt-in deduplication of identical active scans (default off: every POST creates a new Queued scan). */
+  DEDUPE_ACTIVE_SCANS: z.enum(['true', 'false']).default('false').transform((v) => v === 'true'),
   WORKER_CONCURRENCY: int(1, 1),
   WORKER_POLL_MS: int(500, 10),
   HEARTBEAT_MS: int(5000, 10),

@@ -212,7 +212,7 @@ The status response is a discriminated union on `status`:
 
 Other behaviour:
 
-- **Deduplication.** Submitting a repository that is already `Queued` or `Scanning` returns that scan with `"deduplicated": true`.
+- **Every POST creates a new scan** and answers `Queued`, as the brief specifies. Optional: `DEDUPE_ACTIVE_SCANS=true` returns the already-active scan for the same repository instead, with `"deduplicated": true`.
 - **Results only when complete.** Critical results appear only once a scan is `Finished`, never as a partial list.
 - **Errors** use one envelope, `{"error":{"code","message"}}`, with these statuses:
   - `400`: invalid URL, body, id or cursor
@@ -224,7 +224,7 @@ Other behaviour:
 
 ### GraphQL (Bonus B): `POST /graphql`
 
-GraphiQL is served at `/graphiql` outside production. The schema is a superset of the brief's example. `status` is an enum, and the vulnerability list is paginated, with `first` clamped to 1–1000, so no single query can pull an unbounded list into memory.
+GraphiQL is served at `/graphiql` outside production. The schema is a superset of the brief's example: `id: ID!`, `status: String!` and `criticalVulnerabilities: [Vulnerability]` have exactly the example's types, and extra fields are additive. The vulnerability list takes optional pagination arguments, with `first` clamped to 1–1000, so no single query can pull an unbounded list into memory.
 
 ```graphql
 mutation { startScan(repoUrl: "https://github.com/armansw/NodeGoat") { id status } }

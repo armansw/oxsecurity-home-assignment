@@ -24,8 +24,16 @@ describe('ScanService', () => {
     expect(wake).toHaveBeenCalledOnce();
   });
 
-  it('returns the active scan for the same repository instead of queueing a duplicate', async () => {
+  it('creates a new Queued scan for every request by default, as the brief specifies', async () => {
     const svc = service();
+    const first = await svc.requestScan(URL);
+    const second = await svc.requestScan(URL);
+    expect(second.scan.id).not.toBe(first.scan.id);
+    expect([first.scan.status, second.scan.status, second.deduplicated]).toEqual(['Queued', 'Queued', false]);
+  });
+
+  it('optionally returns the active scan for the same repository instead of queueing a duplicate', async () => {
+    const svc = service({ dedupeActiveScans: true });
     const first = await svc.requestScan(URL);
     const second = await svc.requestScan(`${URL}.git/`);
     expect(second).toEqual({ scan: first.scan, deduplicated: true });

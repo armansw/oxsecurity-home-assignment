@@ -9,6 +9,7 @@ describe('loadConfig', () => {
     expect(c).toMatchObject({
       ROLE: 'all',
       TRUST_PROXY: false,
+      DEDUPE_ACTIVE_SCANS: false,
       PORT: 3000,
       SCANNER: 'trivy',
       MAX_ATTEMPTS: 3,

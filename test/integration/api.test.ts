@@ -36,7 +36,7 @@ interface Harness {
   dir: string;
 }
 
-async function harness(opts: { scanner?: Scanner; maxQueued?: number; readyChecks?: Record<string, ReadinessCheck>; rateLimit?: number; withMetrics?: boolean } = {}): Promise<Harness> {
+async function harness(opts: { scanner?: Scanner; maxQueued?: number; readyChecks?: Record<string, ReadinessCheck>; rateLimit?: number; withMetrics?: boolean; dedupe?: boolean } = {}): Promise<Harness> {
   const dir = tempDir();
   const store = memoryStore();
   const log = recordingLogger();
@@ -56,6 +56,7 @@ async function harness(opts: { scanner?: Scanner; maxQueued?: number; readyCheck
   const service = new ScanService(store, {
     allowedHosts: ['github.com'],
     maxQueued: opts.maxQueued ?? 10,
+    dedupeActiveScans: opts.dedupe ?? false,
     wake: () => {
       worker.wake();
     },
@@ -124,11 +125,25 @@ describe('REST API', () => {
     expect(body.criticalVulnerabilities.every((v) => v.severity === 'CRITICAL')).toBe(true);
   });
 
-  it('deduplicates a scan for a repository that is already active', async () => {
+  it('answers every POST with a new scanId and status Queued, even for the same repository', async () => {
     const a = await startScan(h);
     const res = await h.app.inject({ method: 'POST', url: '/api/scan', payload: { repoUrl: `${REPO}.git` } });
     expect(res.statusCode).toBe(202);
-    expect(res.json()).toEqual({ scanId: a, status: 'Queued', deduplicated: true });
+    const body = res.json<{ scanId: string; status: string }>();
+    expect(body.status).toBe('Queued');
+    expect(body.scanId).not.toBe(a);
+  });
+
+  it('deduplicates an active scan when DEDUPE_ACTIVE_SCANS is enabled', async () => {
+    const d = await harness({ dedupe: true });
+    try {
+      const a = await startScan(d);
+      const res = await d.app.inject({ method: 'POST', url: '/api/scan', payload: { repoUrl: `${REPO}.git` } });
+      expect(res.statusCode).toBe(202);
+      expect(res.json()).toEqual({ scanId: a, status: 'Queued', deduplicated: true });
+    } finally {
+      await teardown(d);
+    }
   });
 
   it.each([

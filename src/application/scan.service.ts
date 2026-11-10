@@ -7,6 +7,11 @@ import { normalizeRepoUrl } from '../infrastructure/git/repo-url.js';
 export interface ScanServiceOptions {
   readonly allowedHosts: readonly string[];
   readonly maxQueued: number;
+  /**
+   * Opt-in: return the already Queued/Scanning scan for the same repository instead of creating a new one.
+   * Off by default, because the brief's contract is that POST /api/scan always answers `Queued` with a new id.
+   */
+  readonly dedupeActiveScans?: boolean;
   /** Nudges an in-process worker so a new scan starts without waiting for the next poll. */
   readonly wake?: () => void;
   /** Optional admission check (e.g. free disk) so the queue does not fill with doomed jobs. */
@@ -40,8 +45,10 @@ export class ScanService {
     const normalized = normalizeRepoUrl(rawUrl, this.opts.allowedHosts);
     if (!normalized.ok) throw new RequestError('INVALID_REPO_URL', normalized.reason);
 
-    const existing = this.store.findActiveByRepo(normalized.url);
-    if (existing !== undefined) return { scan: existing, deduplicated: true };
+    if (this.opts.dedupeActiveScans === true) {
+      const existing = this.store.findActiveByRepo(normalized.url);
+      if (existing !== undefined) return { scan: existing, deduplicated: true };
+    }
 
     if (this.store.countQueued() >= this.opts.maxQueued) {
       throw new RequestError('QUEUE_FULL', 'Too many scans are queued; retry later');

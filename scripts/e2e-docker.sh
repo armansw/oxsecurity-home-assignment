@@ -3,6 +3,10 @@
 #
 #   ./scripts/e2e-docker.sh            # real Trivy scan of NodeGoat; expects ≥1 CRITICAL
 #   ./scripts/e2e-docker.sh --fixture  # 600 MB synthetic report (docker-compose.oom.yml)
+#   ./scripts/e2e-docker.sh --split    # API and worker in separate containers (docker-compose.split.yml)
+#
+# EXTRA_COMPOSE_FILES adds override files (e.g. docker-compose.150m.yml). WEB_URL (e.g. http://localhost:8080)
+# also checks the React UI and the nginx proxy for REST and GraphQL.
 #
 # Fails unless the scan Finishes, the container was NOT OOM-killed, and its workspace is empty afterwards.
 set -euo pipefail
@@ -14,6 +18,8 @@ TIMEOUT_S="${TIMEOUT_S:-900}"
 SERVICE="${SERVICE:-app}"
 COMPOSE=(docker compose -f docker-compose.yml)
 [[ "$MODE" == "--fixture" ]] && COMPOSE+=(-f docker-compose.oom.yml)
+if [[ "$MODE" == "--split" ]]; then COMPOSE+=(-f docker-compose.split.yml); SERVICE=worker; fi   # inspect the worker
+for f in ${EXTRA_COMPOSE_FILES:-}; do COMPOSE+=(-f "$f"); done
 
 container="$("${COMPOSE[@]}" ps -q "$SERVICE")"
 [[ -n "$container" ]] || { echo "service '$SERVICE' is not running" >&2; exit 1; }
@@ -59,4 +65,18 @@ echo "status=$status criticalCount=${critical:-?} containerLimit=${limit_mib}MiB
 [[ "$oom" == "false" ]] || { echo "FAIL: container was OOM-killed"; exit 1; }
 [[ "$leftovers" == "0" ]] || { echo "FAIL: workspace not cleaned up"; exit 1; }
 [[ "${critical:-0}" -ge 1 ]] || { echo "FAIL: expected at least one CRITICAL vulnerability"; exit 1; }
+
+if [[ -n "${WEB_URL:-}" ]]; then
+  echo "checking the web UI and its nginx proxy at $WEB_URL"
+  curl -fsS "$WEB_URL/" | grep -q '<div id="root">' || { echo "FAIL: UI did not serve index.html"; exit 1; }
+  curl -fsS "$WEB_URL/some/client/route" | grep -q '<div id="root">' || { echo "FAIL: SPA fallback missing"; exit 1; }
+  curl -fsS "$WEB_URL/api/scan/$scan_id?limit=1" | grep -q '"status":"Finished"' || { echo "FAIL: REST through nginx"; exit 1; }
+  curl -fsS "$WEB_URL/graphql" -H 'content-type: application/json' \
+    -d "{\"query\":\"{ scan(id: \\\"$scan_id\\\") { status criticalCount } }\"}" | grep -q '"status":"Finished"' \
+    || { echo "FAIL: GraphQL through nginx"; exit 1; }
+  # Unpaginated results are streamed; nginx must pass the full body through.
+  full="$(curl -fsS "$WEB_URL/api/scan/$scan_id" | grep -o '"severity":"CRITICAL"' | wc -l | tr -d ' ')"
+  [[ "$full" == "$critical" ]] || { echo "FAIL: streamed body through nginx had $full of $critical findings"; exit 1; }
+  echo "web UI + proxy OK (REST, GraphQL, streamed body with $full findings)"
+fi
 echo PASS

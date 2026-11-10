@@ -85,6 +85,7 @@ async function main(): Promise<void> {
   const service = new ScanService(store, {
     allowedHosts: config.ALLOWED_GIT_HOSTS,
     maxQueued: config.MAX_QUEUED,
+    dedupeActiveScans: config.DEDUPE_ACTIVE_SCANS,
     ...(worker ? { wake: () => { worker.wake(); }, checkCapacity: () => workspace.assertFreeSpace() } : {}),
   });
 

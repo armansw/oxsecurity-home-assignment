@@ -55,31 +55,50 @@ jobs:
       - run: npm run build
 
   docker-e2e:
-    name: docker e2e (${{ matrix.mode }}, mem_limit ${{ matrix.mem }})
+    name: docker e2e (${{ matrix.name }})
     needs: [backend]
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { mode: trivy, mem: 200m }
-          - { mode: fixture, mem: 200m }
-          - { mode: fixture, mem: 150m }   # tighter than the brief: 600 MB report in a 150 MB container
+          # Real Trivy scan, full stack: also builds the web image and checks the UI + nginx proxy.
+          - { name: "trivy + web UI, 200m", files: "", services: "", flag: "", web: "http://localhost:8080" }
+          - { name: "600 MB fixture, 200m", files: "-f docker-compose.oom.yml", services: app, flag: --fixture, web: "" }
+          # Tighter than the brief.
+          - { name: "600 MB fixture, 150m", files: "-f docker-compose.oom.yml -f docker-compose.150m.yml", services: app, flag: --fixture, web: "", extra: docker-compose.150m.yml }
+          # API and worker as separate containers.
+          - { name: "split api/worker + web UI", files: "-f docker-compose.split.yml", services: "", flag: --split, web: "http://localhost:8080" }
     env:
-      APP_MEM_LIMIT: ${{ matrix.mem }}
+      EXTRA_COMPOSE_FILES: ${{ matrix.extra }}
+      WEB_URL: ${{ matrix.web }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Start stack
-        run: |
-          files="-f docker-compose.yml"
-          [ "${{ matrix.mode }}" = fixture ] && files="$files -f docker-compose.oom.yml"
-          docker compose $files up --build -d --wait app
-      - name: Scan inside the 200 MB container
-        run: ./scripts/e2e-docker.sh ${{ matrix.mode == 'fixture' && '--fixture' || '' }}
+        run: docker compose -f docker-compose.yml ${{ matrix.files }} up --build -d --wait ${{ matrix.services }}
+      - name: Scan inside the memory-limited container
+        run: ./scripts/e2e-docker.sh ${{ matrix.flag }}
       - name: Diagnostics
         if: always()
         run: |
-          docker compose ps -a
-          docker inspect -f '{{json .State}}' $(docker compose ps -aq app) || true
+          docker compose -f docker-compose.yml ${{ matrix.files }} ps -a
+          for c in $(docker compose -f docker-compose.yml ${{ matrix.files }} ps -aq); do docker inspect -f '{{.Name}} {{json .State.OOMKilled}} exit={{.State.ExitCode}}' "$c"; done
           sudo dmesg | grep -iE 'oom|killed process|memory cgroup' | tail -20 || true
-          docker compose logs --tail 200 app trivy
+          docker compose -f docker-compose.yml ${{ matrix.files }} logs --tail 100
+
+  run-sh:
+    name: ./run.sh from scratch (${{ matrix.os }})
+    needs: [backend]
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Doctor
+        run: ./run.sh doctor
+      - name: Bootstrap Node + Trivy locally, build, run, scan, Ctrl-C
+        env:
+          CG_FORCE_LOCAL_TOOLS: "1"
+        run: ./scripts/smoke-run.sh

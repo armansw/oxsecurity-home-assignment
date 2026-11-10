@@ -9,8 +9,8 @@ services:
   app:
     build: .
     init: true                       # reap git/trivy children; forward signals for graceful shutdown
-    mem_limit: ${APP_MEM_LIMIT:-200m}       # the constraint under test (CI also runs 150m)
-    memswap_limit: ${APP_MEM_LIMIT:-200m}   # no swap: a leak must fail loudly, not hide in swap
+    mem_limit: 200m                  # the constraint under test (CI also runs 150m: docker-compose.150m.yml)
+    memswap_limit: 200m              # no swap: a leak must fail loudly, not hide in swap
     pids_limit: 256
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]

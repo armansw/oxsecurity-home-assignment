@@ -1,17 +1,10 @@
 /**
  * GraphQL schema (Bonus B). A superset of the brief's example:
  *   type Scan { id: ID!, status: String!, criticalVulnerabilities: [Vulnerability] }
- * `status` is an enum whose values are exactly the REST statuses, and the vulnerability list is paginated
+ * `id`, `status` and `criticalVulnerabilities` keep exactly the example's types; the vulnerability list adds optional pagination
  * (`first` is clamped server-side) so a single query can never pull an unbounded result into memory.
  */
 export const schema = /* GraphQL */ `
-  enum ScanStatus {
-    Queued
-    Scanning
-    Finished
-    Failed
-  }
-
   enum ScanPhase {
     cloning
     scanning
@@ -52,14 +45,15 @@ export const schema = /* GraphQL */ `
 
   type Scan {
     id: ID!
-    status: ScanStatus!
+    "One of: Queued, Scanning, Finished, Failed (String!, exactly as in the assignment's schema example)"
+    status: String!
     repoUrl: String!
     phase: ScanPhase
     progressPct: Int
     attempt: Int!
     criticalCount: Int
     "Null until status is Finished. Paginated: \`first\` is clamped to 1..1000."
-    criticalVulnerabilities(first: Int = 100, after: ID): [Vulnerability!]
+    criticalVulnerabilities(first: Int = 100, after: ID): [Vulnerability]
     stats: ScanStats
     error: ScanError
     createdAt: String!
@@ -72,7 +66,7 @@ export const schema = /* GraphQL */ `
   }
 
   type Mutation {
-    "Queue a scan. Returns immediately with status Queued (or the already-active scan for the same repository)."
+    "Queue a scan. Returns immediately with a new id and status Queued; the scan runs in the background."
     startScan(repoUrl: String!): Scan!
   }
 `;

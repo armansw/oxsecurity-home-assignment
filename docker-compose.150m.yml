@@ -1,0 +1,6 @@
+# Tighter than the brief: the same stack with the app limited to 150 MB (used by CI).
+#   docker compose -f docker-compose.yml -f docker-compose.oom.yml -f docker-compose.150m.yml up --build -d
+services:
+  app:
+    mem_limit: 150m
+    memswap_limit: 150m
