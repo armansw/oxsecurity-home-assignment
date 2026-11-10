@@ -1,9 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { ApiError, isAbortError, toApiError } from './errors';
 import { GraphqlScanApi } from './graphql';
 import { readApiBase } from './http';
 import { createScanApi } from './index';
 import { RestScanApi } from './rest';
+import { fetchSystemMemory } from './system';
 import { isTerminal } from './types';
 
 describe('createScanApi', () => {
@@ -41,5 +42,18 @@ describe('errors', () => {
     expect(isTerminal('Finished')).toBe(true);
     expect(isTerminal('Failed')).toBe(true);
     expect(isTerminal('Scanning')).toBe(false);
+  });
+});
+
+describe('fetchSystemMemory', () => {
+  it('fetches and validates GET /api/system/memory, mapping error envelopes', async () => {
+    const body = { privateMb: 58, heapUsedMb: 24, heapLimitMb: 198, cgroup: null };
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } }));
+    await expect(fetchSystemMemory()).resolves.toEqual(body);
+    expect(fetchMock.mock.calls[0]?.[0]).toMatch(/\/api\/system\/memory$/);
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ error: { code: 'INTERNAL', message: 'x' } }), { status: 500, headers: { 'content-type': 'application/json' } }),
+    );
+    await expect(fetchSystemMemory(new AbortController().signal)).rejects.toMatchObject({ code: 'INTERNAL' });
   });
 });

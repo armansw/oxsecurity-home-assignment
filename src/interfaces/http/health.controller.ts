@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import { readSystemMemory } from '../../infrastructure/process/system-memory.js';
 
 export interface ReadinessCheck {
   readonly ok: boolean;
@@ -20,6 +21,9 @@ export function registerHealthRoutes(app: FastifyInstance, readiness: ReadinessP
       memoryMb: { rss: mb(m.rss), heapUsed: mb(m.heapUsed), heapTotal: mb(m.heapTotal), external: mb(m.external) },
     };
   });
+
+  // Live memory against the real limit, for the UI's proof that the service fits its budget.
+  app.get('/api/system/memory', async (_request, reply) => reply.header('cache-control', 'no-store').send(await readSystemMemory()));
 
   // Readiness: dependencies are usable (database, scanner, disk). 503 takes the pod out of rotation.
   app.get('/readyz', async (_request, reply) => {

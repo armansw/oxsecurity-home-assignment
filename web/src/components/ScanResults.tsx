@@ -2,14 +2,17 @@ import type { ReactElement } from 'react';
 import type { FinishedScan, ScanApi, Vulnerability } from '../api/types';
 import { formatBytes, formatCount, formatDuration } from '../format';
 import { useVulnerabilityPages } from '../hooks/useVulnerabilityPages';
+import { MemoryMeter } from './MemoryMeter';
 
 interface ScanResultsProps {
   readonly api: ScanApi;
   readonly scan: FinishedScan;
+  /** The service's real memory limit (from the server), to draw this scan's peak against; null if unknown. */
+  readonly memoryLimitMb?: number | null;
 }
 
 /** Summary + paginated table for a finished scan. Mount with `key={scan.scanId}`. */
-export function ScanResults({ api, scan }: ScanResultsProps): ReactElement {
+export function ScanResults({ api, scan, memoryLimitMb = null }: ScanResultsProps): ReactElement {
   const pages = useVulnerabilityPages(api, scan.scanId, scan.page);
 
   return (
@@ -22,6 +25,14 @@ export function ScanResults({ api, scan }: ScanResultsProps): ReactElement {
         <Stat label="Duration" value={formatDuration(scan.stats.durationMs)} />
         <Stat label="Peak private memory" value={`${String(scan.stats.peakMemoryMb)} MB`} />
       </dl>
+      {memoryLimitMb !== null && (
+        <MemoryMeter
+          label="Peak memory during this scan"
+          usedMb={scan.stats.peakMemoryMb}
+          limitMb={memoryLimitMb}
+          note={`${formatBytes(scan.stats.reportBytes)} report stream-parsed; the service never held it in memory.`}
+        />
+      )}
 
       {pages.items.length === 0 ? (
         <p className="empty">No critical vulnerabilities found. Nice work.</p>

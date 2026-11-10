@@ -342,6 +342,21 @@ describe('health endpoints', () => {
     }
   });
 
+  it('/api/system/memory reports live memory against the real limit', async () => {
+    const h = await harness();
+    try {
+      const res = await h.app.inject({ method: 'GET', url: '/api/system/memory' });
+      expect(res.statusCode).toBe(200);
+      expect(res.headers['cache-control']).toBe('no-store');
+      const body = res.json<{ privateMb: number; heapLimitMb: number; cgroup: unknown }>();
+      expect(body.privateMb).toBeGreaterThan(0);
+      expect(body.heapLimitMb).toBeGreaterThan(0);
+      expect('cgroup' in body).toBe(true);
+    } finally {
+      await teardown(h);
+    }
+  });
+
   it('/healthz reports liveness and memory', async () => {
     const h = await harness();
     try {

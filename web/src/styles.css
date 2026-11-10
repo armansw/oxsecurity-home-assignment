@@ -317,7 +317,9 @@ th {
 }
 
 .break {
-  word-break: break-all;
+  /* Break long paths only when they cannot fit; keep common lockfile names whole. */
+  overflow-wrap: anywhere;
+  min-width: 10rem;
 }
 
 .results__footer {
@@ -332,4 +334,73 @@ th {
   overflow: hidden;
   clip-path: inset(50%);
   white-space: nowrap;
+}
+
+/* Memory budget: to-scale meters against the real limit. */
+.memory {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.75rem 1rem;
+}
+.meter {
+  display: grid;
+  gap: 0.35rem;
+}
+.results .meter {
+  margin-top: 0.75rem;
+}
+.meter__head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.25rem 1rem;
+  font-size: 0.9rem;
+}
+.meter__value {
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+.meter__value strong {
+  color: var(--text);
+}
+.meter__track {
+  position: relative;
+  height: 10px;
+  border-radius: 5px;
+  background: var(--info-bg);
+  overflow: hidden;
+}
+.meter__fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 5px;
+  background: var(--ok);
+  transition: width 0.4s ease;
+}
+.meter__fill--bg {
+  background: var(--ok);
+  opacity: 0.3;
+}
+.meter__track--tight .meter__fill {
+  background: var(--danger);
+}
+.meter__mark {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--text);
+  opacity: 0.6;
+}
+.meter__note {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+@media (prefers-reduced-motion: reduce) {
+  .meter__fill {
+    transition: none;
+  }
 }

@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from './App';
 import { ApiError } from './api/errors';
+import type { SystemMemory } from './api/system';
 import type { Transport } from './api/types';
 import { POLL_INTERVAL_MS } from './hooks/useScanPolling';
 import { deferred, fakeApi, type FakeApi, finished, queued, REPO_URL, SCAN_ID, scanning } from './test/fixtures';
@@ -24,11 +25,13 @@ async function tick(ms: number): Promise<void> {
   });
 }
 
-function setup(apis: Partial<Record<Transport, FakeApi>> = {}) {
+const noMemory = (): Promise<SystemMemory> => Promise.reject(new Error('not available in tests'));
+
+function setup(apis: Partial<Record<Transport, FakeApi>> = {}, loadMemory: (signal: AbortSignal) => Promise<SystemMemory> = noMemory) {
   const rest = apis.rest ?? fakeApi();
   const graphql = apis.graphql ?? fakeApi();
   const createApi = vi.fn((t: Transport) => (t === 'rest' ? rest : graphql));
-  render(<App createApi={createApi} />);
+  render(<App createApi={createApi} loadMemory={loadMemory} />);
   return { rest, graphql, createApi };
 }
 
@@ -136,5 +139,23 @@ describe('App', () => {
     await user.click(screen.getByRole('radio', { name: 'GraphQL' }));
     expect(await screen.findByRole('heading', { name: 'Results' })).toBeInTheDocument();
     expect(graphql.getScan).toHaveBeenCalledWith(SCAN_ID, { limit: 100, cursor: null }, expect.any(AbortSignal));
+  });
+
+  it('shows the live memory budget against the real container limit, and draws a finished scan against it', async () => {
+    const memory: SystemMemory = { privateMb: 58, heapUsedMb: 24, heapLimitMb: 198, cgroup: { limitMb: 150, currentMb: 67, peakMb: 96 } };
+    const { rest } = setup({}, () => Promise.resolve(memory));
+    await tick(0);
+    expect(screen.getByRole('meter', { name: 'Service memory (live)' })).toHaveAttribute('aria-valuetext', '58 MB of 150 MB');
+    expect(screen.getByText(/peak 96 MB · hard limit 150 MB/)).toBeInTheDocument();
+    rest.startScan.mockResolvedValue({ scanId: SCAN_ID, status: 'Queued', deduplicated: false });
+    rest.getScan.mockResolvedValue(finished());
+    await start();
+    expect(await screen.findByRole('meter', { name: 'Peak memory during this scan' })).toHaveAttribute('aria-valuemax', '150');
+  });
+
+  it('hides the memory panel when the server cannot report memory', async () => {
+    setup();
+    await tick(0);
+    expect(screen.queryByRole('meter')).not.toBeInTheDocument();
   });
 });
