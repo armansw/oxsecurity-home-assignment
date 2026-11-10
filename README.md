@@ -12,7 +12,7 @@ Node.js + TypeScript service that wraps Trivy: clones a GitHub repo, **stream-pa
 | Same report, whole service in Docker `mem_limit: 200m` / `150m`, no swap (CI) | Finished, `OOMKilled=false`, peak 97 / 94 MiB |
 | Real Trivy scan of [armansw/NodeGoat](https://github.com/armansw/NodeGoat) in the 200 MB container (CI) | Finished, 12 CRITICAL |
 | [Large repositories](#large-repositories) (next.js, vscode, kubernetes, …), service capped at **150 MB**, every CRITICAL checked against Trivy | 7/7 exact; peak **94 MiB incl. cache**, limit never reached, 0 OOM kills |
-| [152-repository corpus](#large-repositories), burst-submitted, 8 parallel CI shards | [`large-corpus.yml`](.github/workflows/large-corpus.yml) |
+| [152-repository corpus](#large-repositories) (9 ecosystems), burst-submitted, 8 parallel CI shards, service at **150 MB** | **152/152** exact (793 CRITICAL of 15,631 findings); peak **96 MiB incl. cache**, limit never reached, 0 OOM kills ([run](https://github.com/armansw/oxsecurity-home-assignment/actions/runs/42893164579)) |
 
 `fs.readFile` and `JSON.parse` are banned across `src/` by ESLint and a CI grep.
 
@@ -93,6 +93,8 @@ Decisions and trade-offs: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Deployme
 - **a ready service** afterwards.
 
 CI runs the 7 repositories on `main` and nightly. It runs the [152-repository corpus](test/large/corpus.tsv) weekly and on demand: 8 parallel shards, each submitting all of its repositories at once. The corpus is built by `scripts/build_corpus.py` from the GitHub API: large, popular repositories across npm, Go, Python, Rust, Ruby, PHP, Java and .NET.
+
+Corpus run, 2026-11-10 ([GitHub Actions](https://github.com/armansw/oxsecurity-home-assignment/actions/runs/42893164579)): **152/152 passed**. That's 15,631 findings, of which 793 CRITICAL, all matched exactly. The service container held 150 MiB hard: peak 96 MiB including page cache, the limit reached 0 times, 0 OOM kills. Two earlier runs found and fixed real issues: an unbounded recursive delete in Node, Maven Central rate limits, and a harness that perturbed the container it measured. See the git log.
 
 Live deployment, service hard-capped at 150 MB (`MemoryMax=150M`, no swap, no soft limit), strict mode, 2026-11-10:
 
