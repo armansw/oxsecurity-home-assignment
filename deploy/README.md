@@ -11,7 +11,7 @@ How the live demo at https://oxhometask.armstep.com runs, on a shared host witho
 | named volumes `app-data`, `app-work` (disk-backed) | `StateDirectory=code-guardian` → `/var/lib/code-guardian` |
 | `trivy` sidecar | `code-guardian-trivy.service`, listening on `127.0.0.1:4954` only |
 | `scanner` container (git + Trivy) | `code-guardian-scanner.service` (`ROLE=scanner`, `127.0.0.1:8796`, `MemoryMax=1G`) |
-| — | the service itself: `MemoryMax=150M`, `MemoryHigh=130M`, `OOMPolicy=continue` |
+| — | the service itself: `MemoryMax=150M` (hard, no swap), `OOMPolicy=continue` |
 
 git and Trivy run in `code-guardian-scanner.service`, so the service's 150 MB budget covers only the service.
 Both units run as the static `codeguardian` user and share `/var/lib/code-guardian/work`

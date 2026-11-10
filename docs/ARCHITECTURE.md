@@ -185,6 +185,5 @@ The file-backed memory is the 176 MB binary plus the mmapped DB. The real differ
 |---|---|
 | git and Trivy spawned with `oom_score_adj=1000` | The kernel's OOM killer always picks a scanner child, never the service. The scan fails as `SCANNER_KILLED` and is retried. |
 | `OOMPolicy=continue` (systemd) | A child's OOM kill doesn't stop the unit. systemd's default would take the API down with it. |
-| `MemoryHigh` below `MemoryMax` (systemd); Memory QoS in Kubernetes | Page cache is reclaimed before the hard limit is reached. |
 | `.git` deleted right after the clone | The packfile's disk use and page cache are released before scanning. |
 | Low-memory git (`pack.threads=1`, small caches), Trivy `GOGC=50` / `GOMEMLIMIT=48MiB`, V8 `--max-semi-space-size=2` | Smaller peaks. The V8 setting costs about 25 % parse throughput for about 25 MB of RSS. |

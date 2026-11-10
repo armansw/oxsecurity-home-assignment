@@ -22,9 +22,6 @@ Restart=on-failure
 RestartSec=5
 TimeoutStopSec=15
 KillMode=mixed
-# Soft limit below the hard one: above it the kernel reclaims page cache early (and throttles instead of
-# killing), so total memory including cache stays under MemoryMax. Kubernetes Memory QoS sets the same knob.
-MemoryHigh=130M
 MemoryMax=150M
 MemorySwapMax=0
 # If the kernel OOM-kills a child (git/Trivy on an oversized repo), keep the service running: the scan fails with
