@@ -6,7 +6,7 @@ import { PAGE_SIZE, type PageRequest, type ScanApi, type ScanView, type StartSca
 const SCAN_FIELDS = `
   id status repoUrl phase progressPct attempt criticalCount createdAt startedAt finishedAt
   error { code message }
-  stats { reportBytes vulnerabilitiesScanned malformedSkipped durationMs peakRssMb }
+  stats { reportBytes vulnerabilitiesScanned malformedSkipped durationMs peakMemoryMb }
 `;
 
 export const GET_SCAN_QUERY = `

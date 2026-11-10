@@ -5,7 +5,7 @@ import type { SqliteScanStore } from '../../src/infrastructure/db/sqlite-scan.st
 import { memoryStore } from '../helpers/index.js';
 
 const URL = 'https://github.com/OWASP/NodeGoat';
-const stats = { reportBytes: 1, vulnerabilitiesScanned: 1, criticalCount: 1, malformedSkipped: 0, durationMs: 1, peakRssMb: 1 };
+const stats = { reportBytes: 1, vulnerabilitiesScanned: 1, criticalCount: 1, malformedSkipped: 0, durationMs: 1, peakMemoryMb: 1 };
 
 describe('ScanService', () => {
   let store: SqliteScanStore;

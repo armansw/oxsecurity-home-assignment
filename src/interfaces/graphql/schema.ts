@@ -40,7 +40,7 @@ export const schema = /* GraphQL */ `
     vulnerabilitiesScanned: Int!
     malformedSkipped: Int!
     durationMs: Int!
-    peakRssMb: Int!
+    peakMemoryMb: Int!
   }
 
   type Scan {

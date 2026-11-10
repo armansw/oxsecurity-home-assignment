@@ -20,7 +20,7 @@ export function ScanResults({ api, scan }: ScanResultsProps): ReactElement {
         <Stat label="Report size" value={formatBytes(scan.stats.reportBytes)} />
         <Stat label="Vulnerabilities scanned" value={formatCount(scan.stats.vulnerabilitiesScanned)} />
         <Stat label="Duration" value={formatDuration(scan.stats.durationMs)} />
-        <Stat label="Worker peak RSS" value={`${String(scan.stats.peakRssMb)} MB`} />
+        <Stat label="Peak private memory" value={`${String(scan.stats.peakMemoryMb)} MB`} />
       </dl>
 
       {pages.items.length === 0 ? (

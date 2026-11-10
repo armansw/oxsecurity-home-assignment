@@ -212,7 +212,7 @@ def verify(full: dict, repo: str, args: argparse.Namespace) -> tuple[dict, list[
         return row, problems
     stats = full["stats"]
     row.update(scanned=stats["vulnerabilitiesScanned"], critical=full["criticalCount"],
-               report_mb=round(stats["reportBytes"] / 1048576, 2), peak_rss_mb=stats["peakRssMb"])
+               report_mb=round(stats["reportBytes"] / 1048576, 2), peak_rss_mb=stats["peakMemoryMb"])
     if len(full["criticalVulnerabilities"]) != full["criticalCount"]:
         problems.append("streamed list length != criticalCount")
     if not full.get("commitSha"):

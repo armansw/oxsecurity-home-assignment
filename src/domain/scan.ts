@@ -26,8 +26,8 @@ export interface ScanStats {
   /** CRITICAL entries that failed schema validation and were skipped (not fatal). */
   readonly malformedSkipped: number;
   readonly durationMs: number;
-  /** Peak resident set size of the worker process, measured — not estimated. */
-  readonly peakRssMb: number;
+  /** Peak private (anonymous) memory of the service process during the scan, measured: shared code pages excluded. */
+  readonly peakMemoryMb: number;
 }
 
 export interface ScanFailure {

@@ -74,11 +74,28 @@ describe('ScanProcessor', () => {
     const done = store.findById(scan.id);
     expect(done?.commitSha).toBe(FAKE_COMMIT);
     expect(done).toMatchObject({ status: 'Finished', stats: { vulnerabilitiesScanned: 2, criticalCount: 1, malformedSkipped: 0 } });
-    expect(done?.stats?.peakRssMb).toBeGreaterThan(0);
+    expect(done?.stats?.peakMemoryMb).toBeGreaterThan(0);
     expect(store.listVulnerabilities(scan.id, { afterRowId: 0, limit: 10 }).map((v) => v.vulnerabilityId)).toEqual(['CVE-1']);
     expect(fetcher.calls).toEqual(['https://github.com/a/b.git']);
     expect(workspaceIsEmpty()).toBe(true);
     expect(outcomes).toEqual(['finished']);
+  });
+
+  it('reports the peak of the memory probe as peakMemoryMb', async () => {
+    const scan = claim();
+    const samples = [10, 40, 25].map((mb) => mb * 1024 * 1024);
+    let i = 0;
+    const log = recordingLogger();
+    const p = new ScanProcessor(
+      {
+        store, workspace, log, fetcher: new FakeFetcher(), scanner: FakeScanner.writing(REPORT),
+        reports: new StreamReportProcessor(store, { batchSize: 10, maxValueBytes: 1 << 20 }), now: () => clock,
+        memoryProbe: () => Promise.resolve(samples[Math.min(i++, samples.length - 1)] ?? 0),
+      },
+      { maxAttempts: 3, heartbeatMs: 5, retryBaseMs: 1000, memorySampleMs: 1 },
+    );
+    await p.run(scan, WORKER, new AbortController().signal);
+    expect(store.findById(scan.id)?.stats?.peakMemoryMb).toBe(40);
   });
 
   it('deletes the clone before parsing starts', async () => {

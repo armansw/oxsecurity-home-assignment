@@ -13,7 +13,7 @@ export class PrometheusMetrics implements ScanMetrics {
   readonly registry = new Registry();
   private readonly outcomes: Counter<'outcome' | 'code'>;
   private readonly duration: Histogram<'outcome'>;
-  private readonly peakRss: Histogram;
+  private readonly peakMemory: Histogram;
   private readonly reportSize: Histogram;
   private readonly criticals: Counter;
 
@@ -34,10 +34,10 @@ export class PrometheusMetrics implements ScanMetrics {
       buckets: [1, 5, 15, 30, 60, 120, 300, 600, 1200],
       registers,
     });
-    this.peakRss = new Histogram({
-      name: 'code_guardian_scan_peak_rss_bytes',
-      help: 'Peak resident set size of the worker during a finished scan; compare with the container limit',
-      buckets: [64, 96, 128, 144, 160, 176, 192, 224, 256].map((n) => n * MB),
+    this.peakMemory = new Histogram({
+      name: 'code_guardian_scan_peak_memory_bytes',
+      help: 'Peak private (anonymous) memory of the service during a finished scan; compare with the container limit',
+      buckets: [16, 32, 48, 64, 80, 96, 112, 128, 144, 160].map((n) => n * MB),
       registers,
     });
     this.reportSize = new Histogram({
@@ -65,7 +65,7 @@ export class PrometheusMetrics implements ScanMetrics {
     this.outcomes.inc({ outcome, code: info.code ?? 'none' });
     this.duration.observe({ outcome }, info.durationMs / 1000);
     if (info.stats) {
-      this.peakRss.observe(info.stats.peakRssMb * MB);
+      this.peakMemory.observe(info.stats.peakMemoryMb * MB);
       this.reportSize.observe(info.stats.reportBytes);
       this.criticals.inc(info.stats.criticalCount);
     }

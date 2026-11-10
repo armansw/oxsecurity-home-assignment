@@ -51,7 +51,7 @@ function node(n: number): Record<string, unknown> {
   };
 }
 
-const stats = { reportBytes: 2048, vulnerabilitiesScanned: 3, malformedSkipped: 1, durationMs: 900, peakRssMb: 60 };
+const stats = { reportBytes: 2048, vulnerabilitiesScanned: 3, malformedSkipped: 1, durationMs: 900, peakMemoryMb: 60 };
 
 describe('GraphqlScanApi.startScan', () => {
   it('sends the startScan mutation and maps the result', async () => {

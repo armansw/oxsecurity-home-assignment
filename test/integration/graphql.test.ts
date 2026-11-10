@@ -20,7 +20,7 @@ interface GqlResponse<T> {
   errors?: { message: string; extensions?: { code?: string } }[];
 }
 
-const stats = { reportBytes: 5_000_000_000, vulnerabilitiesScanned: 10, criticalCount: 3, malformedSkipped: 0, durationMs: 42, peakRssMb: 97 };
+const stats = { reportBytes: 5_000_000_000, vulnerabilitiesScanned: 10, criticalCount: 3, malformedSkipped: 0, durationMs: 42, peakMemoryMb: 97 };
 const v = (id: string) => ({
   vulnerabilityId: id, pkgName: 'lodash', installedVersion: '4.17.11', fixedVersion: '4.17.12', severity: 'CRITICAL' as const,
   title: 't', description: 'd', primaryUrl: 'u', target: 'package-lock.json', pkgType: 'npm', cvssScore: 9.8, publishedDate: '2024',
@@ -71,7 +71,7 @@ describe('GraphQL API', () => {
     const id = finishedScan(['A', 'B', 'C']);
     const q = `query($id: ID!, $after: ID) { scan(id: $id) {
       criticalCount createdAt startedAt finishedAt error { code }
-      stats { reportBytes vulnerabilitiesScanned malformedSkipped durationMs peakRssMb }
+      stats { reportBytes vulnerabilitiesScanned malformedSkipped durationMs peakMemoryMb }
       criticalVulnerabilities(first: 2, after: $after) { id cursor severity cvssScore target pkgType installedVersion fixedVersion }
     } }`;
     const p1 = await gql<Page>(q, { id });

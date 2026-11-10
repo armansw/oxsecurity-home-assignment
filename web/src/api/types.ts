@@ -18,7 +18,7 @@ export interface ScanStats {
   readonly vulnerabilitiesScanned: number;
   readonly malformedSkipped: number;
   readonly durationMs: number;
-  readonly peakRssMb: number;
+  readonly peakMemoryMb: number;
 }
 
 export interface Vulnerability {

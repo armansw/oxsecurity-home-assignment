@@ -38,7 +38,7 @@ export const STATS: ScanStats = {
   vulnerabilitiesScanned: 1234,
   malformedSkipped: 0,
   durationMs: 12_300,
-  peakRssMb: 87,
+  peakMemoryMb: 87,
 };
 
 export function queued(): QueuedScan {

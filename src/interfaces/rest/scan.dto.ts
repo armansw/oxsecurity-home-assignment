@@ -53,7 +53,7 @@ export interface FinishedScanHeader extends ScanViewBase {
     readonly vulnerabilitiesScanned: number;
     readonly malformedSkipped: number;
     readonly durationMs: number;
-    readonly peakRssMb: number;
+    readonly peakMemoryMb: number;
   };
 }
 
@@ -92,7 +92,7 @@ export function toScanHeaderView(scan: Scan): ScanHeaderView {
           vulnerabilitiesScanned: s?.vulnerabilitiesScanned ?? 0,
           malformedSkipped: s?.malformedSkipped ?? 0,
           durationMs: s?.durationMs ?? 0,
-          peakRssMb: s?.peakRssMb ?? 0,
+          peakMemoryMb: s?.peakMemoryMb ?? 0,
         },
       };
     }

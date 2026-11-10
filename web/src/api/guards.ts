@@ -87,7 +87,7 @@ export function stats(value: unknown, path: string): ScanStats {
     vulnerabilitiesScanned: num(obj, 'vulnerabilitiesScanned'),
     malformedSkipped: num(obj, 'malformedSkipped'),
     durationMs: num(obj, 'durationMs'),
-    peakRssMb: num(obj, 'peakRssMb'),
+    peakMemoryMb: num(obj, 'peakMemoryMb'),
   };
 }
 

@@ -78,7 +78,7 @@ describe('ScanResults', () => {
     expect(screen.getByText('Report size').nextElementSibling).toHaveTextContent('1.5 MB');
     expect(screen.getByText('Vulnerabilities scanned').nextElementSibling).toHaveTextContent('1,234');
     expect(screen.getByText('Duration').nextElementSibling).toHaveTextContent('12.3 s');
-    expect(screen.getByText('Worker peak RSS').nextElementSibling).toHaveTextContent('87 MB');
+    expect(screen.getByText('Peak private memory').nextElementSibling).toHaveTextContent('87 MB');
 
     const rows = within(screen.getByRole('table')).getAllByRole('row');
     expect(rows).toHaveLength(3);

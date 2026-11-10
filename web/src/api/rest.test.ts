@@ -28,7 +28,7 @@ const wireVuln = {
   cvssScore: 9.8,
   publishedDate: null,
 };
-const wireStats = { reportBytes: 10, vulnerabilitiesScanned: 2, malformedSkipped: 0, durationMs: 5, peakRssMb: 50 };
+const wireStats = { reportBytes: 10, vulnerabilitiesScanned: 2, malformedSkipped: 0, durationMs: 5, peakMemoryMb: 50 };
 
 function lastCall(): { url: string; init: RequestInit } {
   const call = fetchMock.mock.calls.at(-1);

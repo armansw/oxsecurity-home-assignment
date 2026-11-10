@@ -23,7 +23,7 @@ const v = (id: string): CriticalVulnerability => ({
   publishedDate: '2024',
 });
 
-const stats = { reportBytes: 10, vulnerabilitiesScanned: 5, criticalCount: 2, malformedSkipped: 1, durationMs: 100, peakRssMb: 80 };
+const stats = { reportBytes: 10, vulnerabilitiesScanned: 5, criticalCount: 2, malformedSkipped: 1, durationMs: 100, peakMemoryMb: 80 };
 
 describe('SqliteScanStore', () => {
   let clock: number;

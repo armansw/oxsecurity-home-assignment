@@ -2,6 +2,7 @@ import { LeaseLostError } from '../domain/errors.js';
 import { noopMetrics, type Clock, type Logger, type ReportProcessor, type RepositoryFetcher, type Scanner, type ScanMetrics, type ScanStore, type ScanWorkspace, type Workspace } from '../domain/ports.js';
 import type { Scan, ScanPhase } from '../domain/scan.js';
 import { classifyFailure, retryDelayMs } from '../infrastructure/errors/classify-error.js';
+import { privateMemoryBytes } from '../infrastructure/process/private-memory.js';
 
 export interface ScanProcessorDeps {
   readonly store: ScanStore;
@@ -11,6 +12,8 @@ export interface ScanProcessorDeps {
   readonly workspace: Workspace;
   readonly log: Logger;
   readonly metrics?: ScanMetrics;
+  /** Bytes of private memory now; defaults to RssAnon of this process. */
+  readonly memoryProbe?: () => Promise<number>;
   readonly now?: Clock;
   readonly random?: () => number;
 }
@@ -70,10 +73,20 @@ export class ScanProcessor {
     };
     const heartbeat = setInterval(beat, this.opts.heartbeatMs);
 
-    // Peak RSS of this process while this scan ran (includes everything in-process, measured not estimated).
-    let peakRss = process.memoryUsage.rss();
+    // Peak private memory of this process while the scan ran (sampled; shared code pages excluded).
+    const probe = this.deps.memoryProbe ?? privateMemoryBytes;
+    let peakMemory = await probe();
+    let sampling = false;
     const sampler = setInterval(() => {
-      peakRss = Math.max(peakRss, process.memoryUsage.rss());
+      if (sampling) return;
+      sampling = true;
+      void probe()
+        .then((bytes) => {
+          peakMemory = Math.max(peakMemory, bytes);
+        })
+        .finally(() => {
+          sampling = false;
+        });
     }, this.opts.memorySampleMs ?? 250);
 
     let ws: ScanWorkspace | undefined;
@@ -106,8 +119,8 @@ export class ScanProcessor {
       });
       throwIfAborted(job.signal);
 
-      peakRss = Math.max(peakRss, process.memoryUsage.rss());
-      const fullStats = { ...stats, durationMs: this.now() - started, peakRssMb: Math.round(peakRss / (1024 * 1024)) };
+      peakMemory = Math.max(peakMemory, await probe());
+      const fullStats = { ...stats, durationMs: this.now() - started, peakMemoryMb: Math.round(peakMemory / (1024 * 1024)) };
       const finished = store.markFinished(scan.id, workerId, fullStats);
       if (finished) {
         this.metrics.recordOutcome('finished', { durationMs: fullStats.durationMs, stats: fullStats });

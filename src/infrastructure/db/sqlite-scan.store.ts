@@ -105,7 +105,7 @@ export class SqliteScanStore implements ScanStore {
             SET status = 'Finished', phase = NULL, progress_pct = 100, locked_by = NULL, heartbeat_at = NULL,
                 report_bytes = @reportBytes, vulns_scanned = @vulnerabilitiesScanned,
                 critical_count = @criticalCount, malformed_skipped = @malformedSkipped,
-                duration_ms = @durationMs, peak_rss_mb = @peakRssMb, finished_at = @now
+                duration_ms = @durationMs, peak_rss_mb = @peakMemoryMb, finished_at = @now
           WHERE ${LEASE}`,
       ),
       fail: db.prepare<{ id: string; workerId: string; code: string; message: string; now: number }>(
@@ -293,7 +293,7 @@ function toScan(row: ScanRow): Scan {
             criticalCount: row.critical_count ?? 0,
             malformedSkipped: row.malformed_skipped ?? 0,
             durationMs: row.duration_ms ?? 0,
-            peakRssMb: row.peak_rss_mb ?? 0,
+            peakMemoryMb: row.peak_rss_mb ?? 0,
           }
         : null,
     error:

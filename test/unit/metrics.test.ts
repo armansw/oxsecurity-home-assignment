@@ -3,7 +3,7 @@ import { PrometheusMetrics } from '../../src/infrastructure/metrics/prometheus-m
 import { buildOpsApp, isGraphqlMutation } from '../../src/interfaces/http/app.js';
 import { memoryStore } from '../helpers/index.js';
 
-const stats = { reportBytes: 600 * 1024 * 1024, vulnerabilitiesScanned: 10, criticalCount: 7, malformedSkipped: 0, durationMs: 2000, peakRssMb: 97 };
+const stats = { reportBytes: 600 * 1024 * 1024, vulnerabilitiesScanned: 10, criticalCount: 7, malformedSkipped: 0, durationMs: 2000, peakMemoryMb: 97 };
 
 describe('PrometheusMetrics', () => {
   it('records outcomes, peak RSS, report size, criticals and queue depth', async () => {
@@ -20,8 +20,8 @@ describe('PrometheusMetrics', () => {
     expect(text).toContain('code_guardian_scan_outcomes_total{outcome="failed",code="SCANNER_FAILED"} 1');
     expect(text).toContain('code_guardian_critical_vulnerabilities_total 7');
     expect(text).toContain('code_guardian_queue_depth 2');
-    expect(text).toContain('code_guardian_scan_peak_rss_bytes_bucket{le="100663296"} 0'); // 96 MiB: 97 MB is above it
-    expect(text).toContain('code_guardian_scan_peak_rss_bytes_bucket{le="134217728"} 1');
+    expect(text).toContain('code_guardian_scan_peak_memory_bytes_bucket{le="100663296"} 0'); // 96 MiB: 97 MB is above it
+    expect(text).toContain('code_guardian_scan_peak_memory_bytes_bucket{le="134217728"} 1');
     expect(text).toContain('code_guardian_report_bytes_count 1');
     store.close();
   });
