@@ -10,8 +10,10 @@ A backend service that wraps the [Trivy](https://trivy.dev) scanner. It clones a
 |---|---|---|---|
 | 600 MB report (280,839 findings, every one in one `Results[0]`) parsed under `--max-old-space-size=150` | **47 MB** | 130 MB | all 14,041 CRITICAL stored, 25 s |
 | Real Trivy scan of OWASP NodeGoat | — | 112 MB | 93 findings scanned, 12 CRITICAL stored, 2.2 s |
+| **Docker, `mem_limit: 200m`, no swap** (CI): the 600 MB report through the full service | — | container peak 97 MiB* | `Finished`, 14,041/14,041 CRITICAL, `OOMKilled=false`, workspace empty |
+| **Docker, `mem_limit: 200m`** (CI): real Trivy scan of NodeGoat | — | — | `Finished`, 12 CRITICAL, `OOMKilled=false`, workspace empty |
 
-The 25 s figure was measured with the process capped at 60 % of one CPU. See [Proving the memory claim](#proving-the-memory-claim), where every number comes from an actual run.
+The 25 s figure was measured with the process capped at 60 % of one CPU. \*`docker stats` usage, which excludes reclaimable page cache. See [Proving the memory claim](#proving-the-memory-claim), where every number comes from an actual run.
 
 ```mermaid
 flowchart LR
@@ -103,7 +105,7 @@ With no other infrastructure, that command gives a complete system: the database
 npm run oom:check   # = npm run build && node --max-old-space-size=150 dist/scripts/oom-check.js
 ```
 
-The harness generates a Trivy-shaped report of 600 MB. Every finding sits inside **one** `Results[0]` object, the worst case explained under [the single-result trap](#the-five-memory-traps). It then runs the production `StreamReportProcessor` into SQLite and samples `process.memoryUsage()` every 100 ms. It exits non-zero unless every CRITICAL finding was stored **and** peak heap stayed under 100 MB. Actual output:
+The harness generates a Trivy-shaped report of 600 MB. Every finding sits inside **one** `Results[0]` object, the worst case explained under [the single-result trap](#the-six-memory-traps). It then runs the production `StreamReportProcessor` into SQLite and samples `process.memoryUsage()` every 100 ms. It exits non-zero unless every CRITICAL finding was stored **and** peak heap stayed under 100 MB. Actual output:
 
 ```
   600.0 MB, 280,839 vulnerabilities, 14,041 CRITICAL
@@ -247,7 +249,7 @@ A report truncated by a full disk can **never** be reported as `Finished`. The e
 
 The full ADRs are in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md); the memory reasoning is in [docs/MEMORY.md](docs/MEMORY.md).
 
-### The five memory traps
+### The six memory traps
 
 The obvious solution is `stream-json` → `StreamArray` over `Results` → push criticals into an array → `res.json(...)`. It passes on NodeGoat and fails the actual brief. This design closes each trap:
 
@@ -256,6 +258,7 @@ The obvious solution is `stream-json` → `StreamArray` over `Results` → push 
 3. **The egress trap.** A single `JSON.stringify` of the result list recreates the problem on the way out. The status response is **streamed** from keyset-paged reads, and a slow client holds one page.
 4. **The tmpfs trap.** A workspace on tmpfs, or a K8s `emptyDir` with `medium: Memory`, charges the 500 MB file to the container's memory. The work volume is explicitly disk-backed.
 5. **The child-process trap.** `mem_limit` covers Node *and* git *and* Trivy. Measured: Trivy's own anonymous memory is ~30 MB, but its vulnerability DB is 1.7 GB on disk and is memory-mapped. In Docker it lives in a Trivy *server* sidecar, so the DB, its download and its page cache stay outside the app's 200 MB. Trivy also runs with `GOMEMLIMIT=64MiB` and `--parallel 1`.
+6. **The dirty-page-cache trap**, which CI caught. Page cache counts against the container's limit, and dirty pages can't be reclaimed until they are flushed. Writing the 600 MB report faster than the CI runner's disk could flush got the container OOM-killed while its heap was **46 MB**. Large writes now `fdatasync` every 8 MB ([details](docs/MEMORY.md#6-the-dirty-page-cache-trap-found-by-ci)).
 
 ### Other decisions
 

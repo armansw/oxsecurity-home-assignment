@@ -28,7 +28,7 @@ All of it is wired with `stream/promises.pipeline` and an `AbortSignal`. That gi
 
 None of these grows with report size. That is the whole point.
 
-## The five memory traps
+## The six memory traps
 
 ### 1. The single-result trap
 
@@ -64,6 +64,19 @@ On tmpfs, or a Kubernetes `emptyDir` with `medium: Memory`, every byte written c
 | client (`--server`) | 128 MB | 27 MB | 87 MB |
 
 The file-backed part is mostly the 176 MB binary and the memory-mapped vulnerability DB. It is reclaimable, which is why RSS overstates real pressure. The decisive difference is that standalone mode downloads, decompresses and mmaps a **1.7 GB** database inside the container. In Docker the DB lives in the Trivy server sidecar. Trivy also runs with `GOMEMLIMIT=64MiB` (Go soft heap limit) and `--parallel 1`. If an extreme repository still exceeds the budget, the kernel kills Trivy (`SIGKILL`). The service classifies that as `SCANNER_KILLED` (retryable) instead of dying itself. In the split deployment, the API container is unaffected either way.
+
+One caveat. Trivy marshals its report from an in-memory structure, so producing a *genuinely* 500 MB report needs far more than 200 MB inside Trivy itself. At that scale, Trivy runs outside the constrained pod (a scan job or a bigger sidecar) and hands over the file. The constraint this service is built for, and what the assignment tests, is *consuming* such a report. The fixture scanner models exactly that hand-over.
+
+### 6. The dirty-page-cache trap (found by CI)
+
+Page cache is charged to the container's memory cgroup. Clean pages are reclaimable; **dirty** pages are not reclaimable until they have been written back. The first CI run of the 600 MB fixture inside the 200 MB container was OOM-killed while *writing* the report. The kernel log showed:
+
+```
+libuv-worker invoked oom-killer: gfp_mask=…(GFP_HIGHUSER_MOVABLE|__GFP_WRITE), order=3
+Memory cgroup out of memory: Killed process (node) anon-rss:46372kB, file-rss:55168kB
+```
+
+The heap was 46 MB. The cgroup was full of dirty pages that the runner's disk had not flushed yet. The same run passed on a host with a faster disk, which makes this an environment-dependent failure that is easy to miss. The fix is `SyncedFileWriteStream`, which calls `fdatasync` every 8 MB so unflushed data stays bounded. Reading is unaffected: pages read from disk are clean and are dropped under pressure. A local run under an equivalent cgroup (`MemoryMax=200M`, no swap) shows the shape. Anonymous memory peaked at 75 MB. Total cgroup usage sat at the 200 MB limit throughout, made up of reclaimable cache, with `oom_kill 0`.
 
 ## Other bounded buffers
 
