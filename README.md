@@ -46,7 +46,28 @@ flowchart LR
 
 ## Quick start
 
-### Docker (recommended)
+### One command (any Linux or macOS machine)
+
+```bash
+git clone https://github.com/armansw/oxsecurity-home-assignment.git && cd oxsecurity-home-assignment
+./run.sh
+# → Web UI http://localhost:5173 · API http://localhost:3000 · Ctrl-C stops everything
+```
+
+`run.sh` needs only `bash`, `git`, `tar` and `curl`. It uses your Node (≥ 22.12) and Trivy if you have them. If not, it downloads pinned, **checksum-verified** copies (Node 24.22.1, Trivy 0.76.1) into a project-local `.cg-env/` folder, with no root, no global installs and nothing outside the folder. It then installs dependencies (only when the lockfiles changed), builds, and starts the API under the brief's `node --max-old-space-size=150` plus the UI. Busy ports are moved to the next free one.
+
+| Command | |
+|---|---|
+| `./run.sh` | build and run everything |
+| `./run.sh docker` | the same via `docker compose` (200 MB container, Trivy server) |
+| `./run.sh test` | lint, typecheck and test backend and frontend |
+| `./run.sh oom-check [MB]` | the memory proof (default 600 MB) |
+| `./run.sh doctor` | what was found and what would be installed |
+| `./run.sh clean` | remove `.cg-env`, builds and `node_modules` |
+
+On Windows, use WSL2 or `./run.sh docker`.
+
+### Docker
 
 ```bash
 docker compose up --build
