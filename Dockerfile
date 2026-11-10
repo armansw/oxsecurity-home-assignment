@@ -7,7 +7,7 @@ ARG TRIVY_IMAGE=aquasec/trivy:0.76.1@sha256:790fd66d1697395d8693d1acaa1ea702406a
 FROM ${TRIVY_IMAGE} AS trivy
 
 # ---- build ----
-FROM node:24-bookworm-slim AS build
+FROM node:26-bookworm-slim AS build
 WORKDIR /app
 # Toolchain only in the build stage, in case better-sqlite3 has no prebuilt binary for this platform.
 RUN apt-get update && apt-get install -y --no-install-recommends python3 make g++ && rm -rf /var/lib/apt/lists/*
@@ -18,7 +18,7 @@ COPY src ./src
 RUN npm run build && npm prune --omit=dev
 
 # ---- runtime ----
-FROM node:24-bookworm-slim
+FROM node:26-bookworm-slim
 ENV NODE_ENV=production
 RUN apt-get update \
  && apt-get install -y --no-install-recommends git ca-certificates curl \
