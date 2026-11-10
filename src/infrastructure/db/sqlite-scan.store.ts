@@ -17,6 +17,7 @@ import type { Db } from './sqlite.js';
 interface ScanRow {
   id: string;
   repo_url: string;
+  commit_sha: string | null;
   status: string;
   phase: string | null;
   progress_pct: number | null;
@@ -75,7 +76,7 @@ export class SqliteScanStore implements ScanStore {
       claim: db.prepare<{ workerId: string; now: number }, ScanRow>(
         `UPDATE scans
             SET status = 'Scanning', attempts = attempts + 1, locked_by = @workerId, heartbeat_at = @now,
-                started_at = COALESCE(started_at, @now), phase = 'cloning', progress_pct = NULL,
+                started_at = COALESCE(started_at, @now), phase = 'cloning', progress_pct = NULL, commit_sha = NULL,
                 error_code = NULL, error_message = NULL
           WHERE id = (SELECT id FROM scans WHERE status = 'Queued' AND run_after <= @now
                       ORDER BY created_at, rowid LIMIT 1)
@@ -88,6 +89,7 @@ export class SqliteScanStore implements ScanStore {
                 progress_pct = CASE WHEN @setProgress = 1 THEN @progress ELSE progress_pct END
           WHERE ${LEASE}`,
       ),
+      recordCommit: db.prepare<{ id: string; workerId: string; sha: string }>(`UPDATE scans SET commit_sha = @sha WHERE ${LEASE}`),
       holdsLease: db.prepare<{ id: string; workerId: string }, { one: number }>(`SELECT 1 AS one FROM scans WHERE ${LEASE}`),
       clearVulns: db.prepare<[string]>(`DELETE FROM vulnerabilities WHERE scan_id = ?`),
       insertVuln: db.prepare<Record<string, string | number | null>>(
@@ -183,6 +185,10 @@ export class SqliteScanStore implements ScanStore {
     return res.changes === 1;
   }
 
+  recordCommit(id: ScanId, workerId: string, commitSha: string): boolean {
+    return this.stmt.recordCommit.run({ id, workerId, sha: commitSha }).changes === 1;
+  }
+
   clearVulnerabilities(id: ScanId, workerId: string): void {
     this.db.transaction(() => {
       this.assertLease(id, workerId);
@@ -274,6 +280,7 @@ function toScan(row: ScanRow): Scan {
   return {
     id: row.id as ScanId,
     repoUrl: row.repo_url,
+    commitSha: row.commit_sha,
     status: parseStatus(row.status),
     phase: row.phase === null ? null : parsePhase(row.phase),
     progressPct: row.progress_pct,

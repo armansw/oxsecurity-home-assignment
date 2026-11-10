@@ -21,14 +21,19 @@ describe('GitRepositoryFetcher', () => {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
-  it('runs a shallow, hardened clone with the URL after `--`', async () => {
+  it('runs a shallow, hardened clone with the URL after `--`, then reports the commit', async () => {
     const argsFile = path.join(dir, 'git-args');
     const envFile = path.join(dir, 'git-env');
-    const git = fakeBinary(dir, 'git', `printf '%s\\n' "$@" > ${argsFile}; env > ${envFile}`);
-    await new GitRepositoryFetcher({ gitBin: git, timeoutMs: 5000 }).clone('https://github.com/a/b.git', '/tmp/dest', signal());
-    const args = fs.createReadStream(argsFile, 'utf8');
+    const sha = '0123456789abcdef0123456789abcdef01234567';
+    const git = fakeBinary(
+      dir,
+      'git',
+      `if [ "$3" = rev-parse ]; then echo ${sha}; exit 0; fi; printf '%s\\n' "$@" > ${argsFile}; env > ${envFile}`,
+    );
+    const result = await new GitRepositoryFetcher({ gitBin: git, timeoutMs: 5000 }).clone('https://github.com/a/b.git', '/tmp/dest', signal());
+    expect(result).toEqual({ commitSha: sha });
     let text = '';
-    for await (const chunk of args) text += String(chunk);
+    for await (const chunk of fs.createReadStream(argsFile, 'utf8')) text += String(chunk);
     expect(text.trim().split('\n')).toEqual([
       '-c', 'protocol.file.allow=never', '-c', 'credential.helper=', 'clone', '--depth', '1', '--single-branch',
       '--no-tags', '--no-recurse-submodules', '--', 'https://github.com/a/b.git', '/tmp/dest',
@@ -37,6 +42,13 @@ describe('GitRepositoryFetcher', () => {
     for await (const chunk of fs.createReadStream(envFile, 'utf8')) env += String(chunk);
     expect(env).toContain('GIT_TERMINAL_PROMPT=0');
     expect(env).toContain('GIT_CONFIG_GLOBAL=/dev/null');
+  });
+
+  it('fails the clone when the commit cannot be determined', async () => {
+    const git = fakeBinary(dir, 'git-nosha', 'if [ "$3" = rev-parse ]; then echo "not-a-sha"; fi; exit 0');
+    await expect(new GitRepositoryFetcher({ gitBin: git, timeoutMs: 5000 }).clone('u', 'd', signal())).rejects.toMatchObject({
+      code: 'CLONE_FAILED',
+    });
   });
 
   it('classifies a failing clone', async () => {

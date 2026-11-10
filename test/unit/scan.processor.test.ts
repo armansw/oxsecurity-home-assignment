@@ -8,7 +8,7 @@ import type { Scan } from '../../src/domain/scan.js';
 import type { SqliteScanStore } from '../../src/infrastructure/db/sqlite-scan.store.js';
 import { DiskWorkspace } from '../../src/infrastructure/fs/disk-workspace.js';
 import { StreamReportProcessor } from '../../src/infrastructure/report/stream-report-processor.js';
-import { FakeFetcher, FakeScanner, enospc, memoryStore, recordingLogger, report, tempDir, vuln } from '../helpers/index.js';
+import { FAKE_COMMIT, FakeFetcher, FakeScanner, enospc, memoryStore, recordingLogger, report, tempDir, vuln } from '../helpers/index.js';
 
 const WORKER = 'w1';
 const REPORT = report([{ Target: 'package-lock.json', Type: 'npm', Vulnerabilities: [vuln({ id: 'CVE-1' }), vuln({ id: 'CVE-2', severity: 'HIGH' })] }]);
@@ -72,6 +72,7 @@ describe('ScanProcessor', () => {
     await p.run(scan, WORKER, new AbortController().signal);
 
     const done = store.findById(scan.id);
+    expect(done?.commitSha).toBe(FAKE_COMMIT);
     expect(done).toMatchObject({ status: 'Finished', stats: { vulnerabilitiesScanned: 2, criticalCount: 1, malformedSkipped: 0 } });
     expect(done?.stats?.peakRssMb).toBeGreaterThan(0);
     expect(store.listVulnerabilities(scan.id, { afterRowId: 0, limit: 10 }).map((v) => v.vulnerabilityId)).toEqual(['CVE-1']);

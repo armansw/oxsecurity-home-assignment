@@ -39,6 +39,8 @@ export interface Scan {
   readonly id: ScanId;
   /** Normalised repository URL (see infrastructure/git/repo-url.ts). */
   readonly repoUrl: string;
+  /** The exact commit that was scanned (set once the clone completes). */
+  readonly commitSha: string | null;
   readonly status: ScanStatus;
   readonly phase: ScanPhase | null;
   /** Parse progress 0–100 while phase = parsing. */

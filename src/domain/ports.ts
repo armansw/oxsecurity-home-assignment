@@ -39,6 +39,8 @@ export interface ScanStore {
   claimNext(workerId: string): Scan | undefined;
   /** Renew the lease and publish progress. Returns false when the lease has been lost. */
   heartbeat(id: ScanId, workerId: string, patch?: { phase?: ScanPhase; progressPct?: number | null }): boolean;
+  /** Record the exact commit that is being scanned (fenced like every worker write). */
+  recordCommit(id: ScanId, workerId: string, commitSha: string): boolean;
   clearVulnerabilities(id: ScanId, workerId: string): void;
   /** Insert one batch in a single transaction. Throws LeaseLostError when the lease has been lost. */
   appendVulnerabilities(id: ScanId, workerId: string, batch: readonly CriticalVulnerability[]): void;
@@ -58,8 +60,8 @@ export interface ScanStore {
 }
 
 export interface RepositoryFetcher {
-  /** Shallow-clone `repoUrl` into `destDir`. Throws ScanError on failure. */
-  clone(repoUrl: string, destDir: string, signal: AbortSignal): Promise<void>;
+  /** Shallow-clone `repoUrl` into `destDir` and return the commit checked out. Throws ScanError on failure. */
+  clone(repoUrl: string, destDir: string, signal: AbortSignal): Promise<{ readonly commitSha: string }>;
 }
 
 export interface Scanner {

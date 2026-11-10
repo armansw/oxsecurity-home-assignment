@@ -48,6 +48,8 @@ export const schema = /* GraphQL */ `
     "One of: Queued, Scanning, Finished, Failed (String!, exactly as in the assignment's schema example)"
     status: String!
     repoUrl: String!
+    "The exact commit scanned; null until the clone completes"
+    commitSha: String
     phase: ScanPhase
     progressPct: Int
     attempt: Int!

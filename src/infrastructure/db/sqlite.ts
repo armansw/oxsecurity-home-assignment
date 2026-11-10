@@ -49,6 +49,7 @@ const MIGRATIONS: readonly string[] = [
   );
   CREATE INDEX idx_vulns_scan ON vulnerabilities (scan_id, row_id);
   `,
+  `ALTER TABLE scans ADD COLUMN commit_sha TEXT;`,
 ];
 
 /**

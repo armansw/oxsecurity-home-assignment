@@ -1,0 +1,9 @@
+# Large-repository end-to-end corpus (scripts/large_repos_e2e.py). One GitHub URL per line.
+# Chosen for size and for ecosystem variety, which exercises different Trivy analyzers and report shapes.
+https://github.com/armansw/NodeGoat          # the assignment's target (npm, known CRITICALs)
+https://github.com/snyk-labs/nodejs-goof     # deliberately vulnerable, many CRITICALs (npm)
+https://github.com/vercel/next.js            # very large monorepo, huge pnpm lockfile
+https://github.com/microsoft/vscode          # large repo, dozens of npm lockfiles
+https://github.com/grafana/grafana           # Go + Yarn, large dependency graph
+https://github.com/kubernetes/kubernetes     # one of the largest Go repos (vendor tree)
+https://github.com/getsentry/sentry          # Python + JavaScript

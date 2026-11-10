@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 3 * * *"   # nightly: large-repository e2e against fresh upstream commits
 
 permissions:
   contents: read
@@ -102,3 +105,39 @@ jobs:
         env:
           CG_FORCE_LOCAL_TOOLS: "1"
         run: ./scripts/smoke-run.sh
+
+  large-repos:
+    name: large repositories, verified against Trivy (mem_limit 200m)
+    needs: [backend]
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Free disk space for multi-GB clones
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL && df -h /
+      - name: Install the same Trivy (checksum verified) for the independent ground truth
+        run: |
+          V=0.76.1; cd "$RUNNER_TEMP"
+          curl -fsSLO "https://github.com/aquasecurity/trivy/releases/download/v$V/trivy_${V}_Linux-64bit.tar.gz"
+          curl -fsSLO "https://github.com/aquasecurity/trivy/releases/download/v$V/trivy_${V}_checksums.txt"
+          grep "Linux-64bit.tar.gz$" "trivy_${V}_checksums.txt" | sha256sum -c -
+          tar xzf "trivy_${V}_Linux-64bit.tar.gz" trivy && sudo install -m755 trivy /usr/local/bin/trivy
+      - name: Start stack (app limited to 200 MB)
+        run: docker compose -f docker-compose.yml -f docker-compose.large.yml up --build -d --wait app
+      - name: Scan large repositories and verify every CRITICAL finding
+        run: |
+          python3 -u scripts/large_repos_e2e.py --api http://localhost:3000 \
+            --trivy-server http://localhost:4954 --trivy-token change-me-local-token \
+            --container "$(docker compose ps -q app)" --json-out large-repos.json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: large-repos-results
+          path: large-repos.json
+      - name: Diagnostics
+        if: always()
+        run: |
+          docker inspect -f '{{json .State}}' $(docker compose ps -aq app) || true
+          sudo dmesg | grep -iE 'oom|killed process|memory cgroup' | tail -20 || true
+          docker compose logs --tail 150 app

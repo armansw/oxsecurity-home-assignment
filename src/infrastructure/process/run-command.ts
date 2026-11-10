@@ -35,6 +35,8 @@ export interface RunOptions {
   readonly stderrLimit?: number;
   /** Delay between SIGTERM and SIGKILL. */
   readonly killGraceMs?: number;
+  /** Capture up to this many bytes of stdout and resolve with it (default: stdout is discarded). */
+  readonly captureStdout?: number;
 }
 
 /**
@@ -44,11 +46,11 @@ export interface RunOptions {
  *  - own process group (`detached`), so timeout/abort kills the whole tree (git spawns git-remote-https);
  *  - SIGTERM, then SIGKILL after a grace period.
  */
-export function runCommand(command: string, opts: RunOptions): Promise<void> {
+export function runCommand(command: string, opts: RunOptions): Promise<string> {
   const limit = opts.stderrLimit ?? 8 * 1024;
   const killGraceMs = opts.killGraceMs ?? 5000;
 
-  return new Promise<void>((resolve, reject) => {
+  return new Promise<string>((resolve, reject) => {
     if (opts.signal.aborted) {
       reject(new CommandError('aborted', command, null, null, '', { cause: opts.signal.reason }));
       return;
@@ -61,13 +63,20 @@ export function runCommand(command: string, opts: RunOptions): Promise<void> {
     const child = spawn(command, [...opts.args], {
       cwd: opts.cwd,
       env: opts.env,
-      stdio: ['ignore', 'ignore', 'pipe'],
+      stdio: ['ignore', opts.captureStdout === undefined ? 'ignore' : 'pipe', 'pipe'],
       detached: true,
       shell: false,
     });
 
-    child.stderr.setEncoding('utf8');
-    child.stderr.on('data', (chunk: string) => {
+    let stdout = '';
+    const stdoutLimit = opts.captureStdout ?? 0;
+    child.stdout?.setEncoding('utf8');
+    child.stdout?.on('data', (chunk: string) => {
+      if (stdout.length < stdoutLimit) stdout = (stdout + chunk).slice(0, stdoutLimit);
+    });
+
+    child.stderr?.setEncoding('utf8');
+    child.stderr?.on('data', (chunk: string) => {
       stderr += chunk;
       if (stderr.length > limit) stderr = stderr.slice(-limit);
     });
@@ -115,7 +124,7 @@ export function runCommand(command: string, opts: RunOptions): Promise<void> {
       if (stopReason !== null) {
         reject(new CommandError(stopReason, command, code, signal, stderr, stopReason === 'aborted' ? { cause: opts.signal.reason } : undefined));
       } else if (code === 0) {
-        resolve();
+        resolve(stdout);
       } else {
         reject(new CommandError('exit', command, code, signal, stderr));
       }

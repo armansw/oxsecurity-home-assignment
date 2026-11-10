@@ -80,13 +80,16 @@ export function report(results: readonly Record<string, unknown>[], extra: Recor
   return JSON.stringify({ SchemaVersion: 2, ArtifactName: '.', ...extra, Results: results }, null, 2);
 }
 
+export const FAKE_COMMIT = 'a'.repeat(40);
+
 /** Fetcher that "clones" by creating the directory, or fails with the given error. */
 export class FakeFetcher implements RepositoryFetcher {
   calls: string[] = [];
   constructor(private readonly behaviour: (url: string, dest: string, signal: AbortSignal) => Promise<void> = mkdirFetch) {}
-  async clone(url: string, dest: string, signal: AbortSignal): Promise<void> {
+  async clone(url: string, dest: string, signal: AbortSignal): Promise<{ readonly commitSha: string }> {
     this.calls.push(url);
     await this.behaviour(url, dest, signal);
+    return { commitSha: FAKE_COMMIT };
   }
 }
 

@@ -12,7 +12,7 @@ import { buildApp } from '../../src/interfaces/http/app.js';
 import { PrometheusMetrics } from '../../src/infrastructure/metrics/prometheus-metrics.js';
 import type { ReadinessCheck } from '../../src/interfaces/http/health.controller.js';
 import { Worker } from '../../src/worker/worker.js';
-import { FakeFetcher, FakeScanner, memoryStore, recordingLogger, report, tempDir, vuln, waitFor } from '../helpers/index.js';
+import { FAKE_COMMIT, FakeFetcher, FakeScanner, memoryStore, recordingLogger, report, tempDir, vuln, waitFor } from '../helpers/index.js';
 
 const REPO = 'https://github.com/OWASP/NodeGoat';
 
@@ -120,7 +120,7 @@ describe('REST API', () => {
     const res = await h.app.inject({ method: 'GET', url: `/api/scan/${id}` });
     expect(res.headers['content-type']).toBe('application/json; charset=utf-8');
     const body = res.json<{ status: string; criticalCount: number; criticalVulnerabilities: { id: string; severity: string }[]; stats: { vulnerabilitiesScanned: number } }>();
-    expect(body).toMatchObject({ scanId: id, status: 'Finished', criticalCount: 2, repoUrl: 'https://github.com/OWASP/NodeGoat.git', stats: { vulnerabilitiesScanned: 5 } });
+    expect(body).toMatchObject({ scanId: id, status: 'Finished', criticalCount: 2, repoUrl: 'https://github.com/OWASP/NodeGoat.git', commitSha: FAKE_COMMIT, stats: { vulnerabilitiesScanned: 5 } });
     expect(body.criticalVulnerabilities.map((v) => v.id)).toEqual(['CVE-2024-00000', 'CVE-2024-00001']);
     expect(body.criticalVulnerabilities.every((v) => v.severity === 'CRITICAL')).toBe(true);
   });

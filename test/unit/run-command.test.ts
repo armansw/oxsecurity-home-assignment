@@ -6,7 +6,7 @@ const sh = (script: string, extra: Partial<Parameters<typeof runCommand>[1]> = {
 
 describe('runCommand', () => {
   it('resolves on exit 0', async () => {
-    await expect(sh('exit 0')).resolves.toBeUndefined();
+    await expect(sh('exit 0')).resolves.toBe('');
   });
 
   it('rejects with exit details and the stderr tail', async () => {
@@ -65,10 +65,16 @@ describe('runCommand', () => {
   it('passes only the given environment to the child', async () => {
     process.env.CG_SECRET_FOR_TEST = 'leak';
     try {
-      await expect(sh('[ -z "$CG_SECRET_FOR_TEST" ] && [ "$FOO" = bar ]', { env: baseChildEnv({ FOO: 'bar', SKIP: undefined }) })).resolves.toBeUndefined();
+      await expect(sh('[ -z "$CG_SECRET_FOR_TEST" ] && [ "$FOO" = bar ]', { env: baseChildEnv({ FOO: 'bar', SKIP: undefined }) })).resolves.toBe('');
     } finally {
       delete process.env.CG_SECRET_FOR_TEST;
     }
+  });
+
+  it('captures a bounded amount of stdout when asked, and none otherwise', async () => {
+    await expect(sh('echo hello; echo world', { captureStdout: 100 })).resolves.toBe('hello\nworld\n');
+    await expect(sh('i=0; while [ $i -lt 500 ]; do printf x; i=$((i+1)); done', { captureStdout: 10 })).resolves.toBe('xxxxxxxxxx');
+    await expect(sh('echo hidden')).resolves.toBe('');
   });
 
   it('errno is undefined for non-spawn failures', async () => {

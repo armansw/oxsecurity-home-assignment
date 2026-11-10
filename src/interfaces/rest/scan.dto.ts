@@ -19,6 +19,8 @@ export interface VulnerabilityDto {
 interface ScanViewBase {
   readonly scanId: string;
   readonly repoUrl: string;
+  /** The exact commit scanned; null until the clone completes. */
+  readonly commitSha: string | null;
   readonly attempt: number;
   readonly createdAt: string;
 }
@@ -61,6 +63,7 @@ export function toScanHeaderView(scan: Scan): ScanHeaderView {
   const base: ScanViewBase = {
     scanId: scan.id,
     repoUrl: scan.repoUrl,
+    commitSha: scan.commitSha,
     attempt: scan.attempts,
     createdAt: scan.createdAt.toISOString(),
   };

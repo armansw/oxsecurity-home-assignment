@@ -104,7 +104,24 @@ The public status is exactly the brief's four values. `phase` (`cloning | scanni
 - Trivy `SIGKILL` we did not send → `SCANNER_KILLED`
 - tokenizer exception → `REPORT_INVALID`
 
-`classifyFailure` handles what can surface from anywhere: disk exhaustion (errno, SQLite, message, nested causes), aborts, lease loss, and `INTERNAL` for everything else. Messages stored on a scan are written for clients; details stay in the logs. The full table is in the [README](../README.md#error-handling).
+`classifyFailure` handles what can surface from anywhere: disk exhaustion (errno, SQLite, message, nested causes), aborts, lease loss, and `INTERNAL` for everything else. Messages stored on a scan are written for clients; details stay in the logs.
+
+| Failure | Detected by | Code | Retried |
+|---|---|---|---|
+| Repo missing or private | git exit 128, stderr `not found` / `could not read Username` | `REPO_NOT_FOUND` | no |
+| Network error while cloning | other git failure | `CLONE_FAILED` | yes |
+| Clone or scan too slow | our timeout (process group killed) | `CLONE_TIMEOUT` / `SCAN_TIMEOUT` | yes |
+| Trivy not installed | spawn `ENOENT` | `SCANNER_UNAVAILABLE` | no |
+| Trivy exits non-zero (DB download, server down, …) | exit code | `SCANNER_FAILED` | yes |
+| Trivy killed by the kernel OOM killer | `SIGKILL` we did not send | `SCANNER_KILLED` | yes |
+| Report missing, empty, truncated, not JSON, or a value over 1 MiB | `stat`, tokenizer, extractor end-of-document check | `REPORT_INVALID` | no |
+| Not enough free disk before starting | `statfs` pre-flight | `INSUFFICIENT_DISK` | yes |
+| Disk fills up mid-job | `ENOSPC` / `EDQUOT` / `SQLITE_FULL` / "No space left on device" | `DISK_FULL` | yes |
+| Worker crashed or was OOM-killed mid-scan | stale heartbeat (reaper) | re-queued; `WORKER_CRASHED` after the last attempt | yes |
+| Anything else | — | `INTERNAL` (generic message) | no |
+
+Retries use exponential backoff (5 s, 20 s, 80 s, ±20 % jitter) with at most 3 attempts.
+
 
 ## External processes
 

@@ -84,6 +84,17 @@ describe('SqliteScanStore', () => {
     expect(store.heartbeat(s.id, 'intruder', { phase: 'scanning' })).toBe(false);
   });
 
+  it('records the scanned commit for the lease owner only, and clears it on a new attempt', () => {
+    const s = store.create('r');
+    expect(s.commitSha).toBeNull();
+    store.claimNext('w');
+    expect(store.recordCommit(s.id, 'zombie', 'b'.repeat(40))).toBe(false);
+    expect(store.recordCommit(s.id, 'w', 'a'.repeat(40))).toBe(true);
+    expect(store.findById(s.id)?.commitSha).toBe('a'.repeat(40));
+    store.requeue(s.id, 'w', { runAfter: 0, refundAttempt: false });
+    expect(store.claimNext('w2')?.commitSha).toBeNull();
+  });
+
   it('fences every write by lease owner', () => {
     const s = store.create('r');
     store.claimNext('w');

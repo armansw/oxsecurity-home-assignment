@@ -32,8 +32,8 @@ const EnvSchema = z.object({
   /** Go soft heap limit for the Trivy child process. */
   TRIVY_GOMEMLIMIT: z.string().regex(/^\d+(B|KiB|MiB|GiB)$/).default('64MiB'),
   GIT_BIN: z.string().min(1).default('git'),
-  CLONE_TIMEOUT_MS: int(120_000, 1000),
-  SCAN_TIMEOUT_MS: int(600_000, 1000),
+  CLONE_TIMEOUT_MS: int(300_000, 1000),
+  SCAN_TIMEOUT_MS: int(1_200_000, 1000),
   ALLOWED_GIT_HOSTS: z
     .string()
     .default('github.com')

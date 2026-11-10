@@ -84,8 +84,10 @@ export class ScanProcessor {
       store.clearVulnerabilities(scan.id, workerId); // idempotent retries
 
       enter('cloning');
-      await fetcher.clone(scan.repoUrl, ws.repoDir, job.signal);
+      const { commitSha } = await fetcher.clone(scan.repoUrl, ws.repoDir, job.signal);
       throwIfAborted(job.signal);
+      store.recordCommit(scan.id, workerId, commitSha);
+      log.info({ commitSha }, 'cloned');
 
       enter('scanning');
       await scanner.scan({ sourceDir: ws.repoDir, reportPath: ws.reportPath, tmpDir: ws.tmpDir, signal: job.signal });

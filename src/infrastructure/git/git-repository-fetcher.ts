@@ -13,7 +13,7 @@ const NOT_FOUND_RE = /repository not found|not found|could not read username|aut
 export class GitRepositoryFetcher implements RepositoryFetcher {
   constructor(private readonly opts: GitFetcherOptions) {}
 
-  async clone(repoUrl: string, destDir: string, signal: AbortSignal): Promise<void> {
+  async clone(repoUrl: string, destDir: string, signal: AbortSignal): Promise<{ readonly commitSha: string }> {
     const args = [
       // Refuse local-file transport even via redirects/submodules; no credential helper prompts.
       '-c', 'protocol.file.allow=never',
@@ -29,18 +29,27 @@ export class GitRepositoryFetcher implements RepositoryFetcher {
       destDir,
     ];
 
+    const env = baseChildEnv({
+      GIT_TERMINAL_PROMPT: '0', // private/missing repo fails fast instead of waiting for a password
+      GIT_CONFIG_NOSYSTEM: '1',
+      GIT_CONFIG_GLOBAL: '/dev/null',
+      GIT_LFS_SKIP_SMUDGE: '1',
+    });
     try {
-      await runCommand(this.opts.gitBin, {
-        args,
-        timeoutMs: this.opts.timeoutMs,
+      await runCommand(this.opts.gitBin, { args, timeoutMs: this.opts.timeoutMs, signal, env });
+      // Record exactly what was scanned: results are only meaningful together with the commit they describe.
+      const out = await runCommand(this.opts.gitBin, {
+        args: ['-C', destDir, 'rev-parse', 'HEAD'],
+        timeoutMs: 10_000,
         signal,
-        env: baseChildEnv({
-          GIT_TERMINAL_PROMPT: '0', // private/missing repo fails fast instead of waiting for a password
-          GIT_CONFIG_NOSYSTEM: '1',
-          GIT_CONFIG_GLOBAL: '/dev/null',
-          GIT_LFS_SKIP_SMUDGE: '1',
-        }),
+        env,
+        captureStdout: 128,
       });
+      const commitSha = out.trim();
+      if (!/^[0-9a-f]{40}([0-9a-f]{24})?$/.test(commitSha)) {
+        throw new ScanError('CLONE_FAILED', 'Could not determine the cloned commit', true);
+      }
+      return { commitSha };
     } catch (err) {
       throw classifyGitError(err);
     }

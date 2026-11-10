@@ -1,0 +1,5 @@
+# Large-repository e2e (scripts/large_repos_e2e.py): publish the Trivy server on localhost so the independent
+# ground-truth run uses the same vulnerability DB as the service.
+services:
+  trivy:
+    ports: ["127.0.0.1:4954:4954"]
