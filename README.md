@@ -2,7 +2,7 @@
 
 A backend service that wraps the [Trivy](https://trivy.dev) scanner. It clones a GitHub repository, runs Trivy, **stream-parses** the JSON report, which can be 500 MB or more, keeps only `CRITICAL` vulnerabilities, deletes the clone and the report, and exposes the result over REST and GraphQL. It is designed to run in a 200–256 MB container.
 
-**Live demo:** https://oxhometask.armstep.com (deployed with systemd under the same 200 MB limit: [deploy/](deploy/README.md))
+**Live demo:** https://oxhometask.armstep.com · **Walkthrough video:** [docs/demo.mp4](docs/demo.mp4) (34 s) (deployed with systemd under the same 200 MB limit: [deploy/](deploy/README.md))
 
 [![CI](https://github.com/armansw/oxsecurity-home-assignment/actions/workflows/ci.yml/badge.svg)](https://github.com/armansw/oxsecurity-home-assignment/actions/workflows/ci.yml)
 
