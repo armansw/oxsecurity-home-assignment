@@ -2,8 +2,7 @@ import fs from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { pipeline } from 'node:stream/promises';
 import { chain, flushable, none } from 'stream-chain';
-import { parser } from 'stream-json';
-import type { Token } from 'stream-json/parser.js';
+import { jsonParser, type Token } from 'stream-json/parser.js';
 import { ScanError } from '../../domain/errors.js';
 import type { ReportProcessor, ReportStats, ScanStore } from '../../domain/ports.js';
 import type { CriticalVulnerability } from '../../domain/vulnerability.js';
@@ -88,7 +87,11 @@ async function reportSize(reportPath: string): Promise<number> {
  * value over `maxValueBytes`, absurd nesting) is classified as REPORT_INVALID here, where its origin is known.
  */
 export function buildParseStage(extractor: CriticalVulnerabilityExtractor, maxValueBytes: number): chain.ChainOutput<string, CriticalVulnerability> {
-  const tokenize = parser({
+  // The synchronous core tokenizer (not the async-generator `parser()` wrapper): it returns each chunk's
+  // tokens as one batch and throws synchronously, so the whole stage runs as plain function calls and parse
+  // errors surface here, where they can be classified. UTF-8 boundaries are handled by the read stream's
+  // `encoding: 'utf8'` decoder.
+  const tokenize = jsonParser({
     packValues: true,
     streamValues: false,
     maxPackedLength: maxValueBytes,

@@ -50,7 +50,3 @@ export interface Scan {
   readonly startedAt: Date | null;
   readonly finishedAt: Date | null;
 }
-
-export function isTerminal(status: ScanStatus): boolean {
-  return status === 'Finished' || status === 'Failed';
-}
