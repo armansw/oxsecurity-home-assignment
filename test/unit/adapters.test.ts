@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { ScanError } from '../../src/domain/errors.js';
 import { GitRepositoryFetcher, classifyGitError } from '../../src/infrastructure/git/git-repository-fetcher.js';
 import { CommandError } from '../../src/infrastructure/process/run-command.js';
-import { TrivyScanner, classifyTrivyError } from '../../src/infrastructure/scanner/trivy-scanner.js';
+import { TrivyScanner, classifyTrivyError, trivyReason } from '../../src/infrastructure/scanner/trivy-scanner.js';
 import { FixtureScanner } from '../../src/infrastructure/scanner/fixture-scanner.js';
 import { fakeBinary, tempDir } from '../helpers/index.js';
 
@@ -102,12 +102,12 @@ describe('TrivyScanner', () => {
       `printf '%s\\n' "$@" > ${argsFile}; env | grep -E '^(GOMEMLIMIT|GOGC|TMPDIR)=' >> ${argsFile}; while [ $# -gt 0 ]; do if [ "$1" = --output ]; then echo '{}' > "$2"; fi; shift; done`,
     );
     const reportPath = path.join(dir, 'report.json');
-    await scanner(bin, { serverUrl: 'http://trivy:4954', token: 't0k' }).scan({ sourceDir: '/src', reportPath, tmpDir: '/tmpdir', signal: signal() });
+    await scanner(bin, { serverUrl: 'http://trivy:4954', token: 't0k', offlineScan: true }).scan({ sourceDir: '/src', reportPath, tmpDir: '/tmpdir', signal: signal() });
     let text = '';
     for await (const chunk of fs.createReadStream(argsFile, 'utf8')) text += String(chunk);
     const lines = text.trim().split('\n');
     expect(lines).toEqual(
-      expect.arrayContaining(['fs', '--scanners', 'vuln', '--format', 'json', '--output', reportPath, '--server', 'http://trivy:4954', '--token', 't0k', '/src', 'GOMEMLIMIT=64MiB', 'GOGC=50', 'TMPDIR=/tmpdir']),
+      expect.arrayContaining(['fs', '--scanners', 'vuln', '--format', 'json', '--output', reportPath, '--offline-scan', '--server', 'http://trivy:4954', '--token', 't0k', '/src', 'GOMEMLIMIT=64MiB', 'GOGC=50', 'TMPDIR=/tmpdir']),
     );
     expect(lines).not.toContain('--severity');
   });
@@ -120,6 +120,7 @@ describe('TrivyScanner', () => {
     for await (const chunk of fs.createReadStream(argsFile, 'utf8')) text += String(chunk);
     expect(text).toContain('--server');
     expect(text).not.toContain('--token');
+    expect(text).not.toContain('--offline-scan');
   });
 
   it('rejects a successful run that produced no or an empty report', async () => {
@@ -155,10 +156,33 @@ describe('TrivyScanner', () => {
     [cmdErr('exit', 'write /work/report.json: no space left on device'), 'DISK_FULL', true],
     [cmdErr('exit', '', 'SIGKILL', null), 'SCANNER_KILLED', true],
     [cmdErr('exit', 'FATAL'), 'SCANNER_FAILED', true],
+    [cmdErr('exit', 'FATAL Error remote Maven repository returned 429 Too Many Requests. Retry-After: 1800.'), 'UPSTREAM_RATE_LIMITED', true],
   ])('classifyTrivyError %#', (err, code, retryable) => {
     const out = classifyTrivyError(err);
     expect(out).toBeInstanceOf(ScanError);
     expect(out).toMatchObject({ code, retryable });
+  });
+
+  it('honours Retry-After on upstream rate limits, within bounds', () => {
+    const withHeader = classifyTrivyError(cmdErr('exit', '2026-11-10T20:08:40Z\tFATAL\tError\tremote Maven repository returned 429 Too Many Requests. Retry-After: 1800.'));
+    expect(withHeader).toMatchObject({ code: 'UPSTREAM_RATE_LIMITED', retryAfterMs: 1_800_000 });
+    expect((withHeader as ScanError).message).toContain('retrying in 30 min');
+    expect(classifyTrivyError(cmdErr('exit', 'HTTP 429 Too Many Requests'))).toMatchObject({ retryAfterMs: 600_000 });
+    expect(classifyTrivyError(cmdErr('exit', '429 Too Many Requests. Retry-After: 5'))).toMatchObject({ retryAfterMs: 60_000 });
+    expect(classifyTrivyError(cmdErr('exit', '429 Too Many Requests. Retry-After: 99999'))).toMatchObject({ retryAfterMs: 3_600_000 });
+  });
+
+  it('puts a sanitized Trivy reason in SCANNER_FAILED messages', () => {
+    const err = classifyTrivyError(
+      cmdErr('exit', 'INFO starting\n2026-11-10T20:08:40Z\tFATAL\tError\tfailed to analyze /work/scan-11111111-1111-4111-8111-111111111111/repo/pom.xml: boom\n'),
+    );
+    expect(err).toMatchObject({ code: 'SCANNER_FAILED', message: 'Trivy exited with code 1: Error failed to analyze pom.xml: boom' });
+  });
+
+  it('trivyReason falls back to the last line, or a placeholder', () => {
+    expect(trivyReason('first\nsecond line\n')).toBe('second line');
+    expect(trivyReason('')).toBe('no error output');
+    expect(trivyReason('x'.repeat(1000))).toHaveLength(300);
   });
 
   it('passes through aborts and unknown errors', () => {

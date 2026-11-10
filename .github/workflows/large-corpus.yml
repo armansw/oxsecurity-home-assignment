@@ -36,7 +36,7 @@ jobs:
       - name: Burst-scan the shard and verify every CRITICAL finding
         run: |
           mkdir -p "results/shard-${{ matrix.shard }}"
-          python3 -u scripts/large_repos_e2e.py --repos test/large/corpus.tsv --shard ${{ matrix.shard }}/8 --burst --strict-limit \
+          python3 -u scripts/large_repos_e2e.py --trivy-offline --repos test/large/corpus.tsv --shard ${{ matrix.shard }}/8 --burst --strict-limit \
             --api http://localhost:3000 --trivy-server http://localhost:4954 --trivy-token change-me-local-token \
             --container "$(docker compose ps -q app)" --json-out "results/shard-${{ matrix.shard }}/result.json"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

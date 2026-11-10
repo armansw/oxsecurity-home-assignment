@@ -170,6 +170,7 @@ function localTrivy(config: Config): TrivyScanner {
     token: config.TRIVY_TOKEN,
     goMemLimit: config.TRIVY_GOMEMLIMIT,
     goGc: config.TRIVY_GOGC,
+    offlineScan: config.TRIVY_OFFLINE_SCAN,
   });
 }
 

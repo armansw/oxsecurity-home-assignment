@@ -18,6 +18,7 @@ describe('loadConfig', () => {
       ALLOWED_GIT_HOSTS: ['github.com'],
       TRIVY_GOMEMLIMIT: '48MiB',
       TRIVY_GOGC: 50,
+      TRIVY_OFFLINE_SCAN: false,
       WORK_DIR: path.join(os.tmpdir(), 'code-guardian'),
     });
     expect(c.trivyCacheDir).toBe(path.join(c.WORK_DIR, '.trivy-cache'));

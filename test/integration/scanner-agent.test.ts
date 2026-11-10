@@ -56,6 +56,15 @@ describe('scanner agent + RemoteScanAgent (over real HTTP)', () => {
     });
   });
 
+  it('carries an upstream Retry-After across the agent', async () => {
+    const scanner = new FakeScanner(() => Promise.reject(new ScanError('UPSTREAM_RATE_LIMITED', 'Maven 429', true, { retryAfterMs: 900_000 })));
+    const remote = new RemoteScanAgent({ url: await start(undefined, scanner), token: TOKEN });
+    await expect(remote.scan({ sourceDir: ws.repoDir, reportPath: ws.reportPath, tmpDir: ws.tmpDir, signal: signal() })).rejects.toMatchObject({
+      code: 'UPSTREAM_RATE_LIMITED',
+      retryAfterMs: 900_000,
+    });
+  });
+
   it('maps unexpected agent failures to INTERNAL', async () => {
     const remote = new RemoteScanAgent({ url: await start(undefined, new FakeScanner(() => Promise.reject(new Error('boom')))), token: TOKEN });
     await expect(remote.scan({ sourceDir: ws.repoDir, reportPath: ws.reportPath, tmpDir: ws.tmpDir, signal: signal() })).rejects.toMatchObject({

@@ -11,6 +11,7 @@ export const SCAN_ERROR_CODES = [
   'SCANNER_FAILED',
   'SCAN_TIMEOUT',
   'SCANNER_KILLED',
+  'UPSTREAM_RATE_LIMITED',
   'REPORT_INVALID',
   'INSUFFICIENT_DISK',
   'DISK_FULL',
@@ -23,17 +24,22 @@ export function isScanErrorCode(value: string): value is ScanErrorCode {
   return (SCAN_ERROR_CODES as readonly string[]).includes(value);
 }
 
-/** A classified scan failure. `retryable` decides between re-queue (with backoff) and `Failed`. */
+/**
+ * A classified scan failure. `retryable` decides between re-queue (with backoff) and `Failed`; `retryAfterMs`
+ * lets a failure demand a longer wait than the default backoff (e.g. an upstream registry's Retry-After).
+ */
 export class ScanError extends Error {
   override readonly name = 'ScanError';
+  readonly retryAfterMs: number | undefined;
 
   constructor(
     readonly code: ScanErrorCode,
     message: string,
     readonly retryable = false,
-    options?: ErrorOptions,
+    options?: ErrorOptions & { readonly retryAfterMs?: number },
   ) {
     super(message, options);
+    this.retryAfterMs = options?.retryAfterMs;
   }
 }
 

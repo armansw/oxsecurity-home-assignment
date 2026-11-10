@@ -38,6 +38,8 @@ const EnvSchema = z.object({
   TRIVY_CACHE_DIR: z.string().optional(),
   /** Go soft heap limit for the Trivy child process. */
   TRIVY_GOMEMLIMIT: z.string().regex(/^\d+(B|KiB|MiB|GiB)$/).default('48MiB'),
+  /** Trivy `--offline-scan`: no registry lookups (deterministic; no Maven Central rate limits). */
+  TRIVY_OFFLINE_SCAN: z.enum(['true', 'false']).default('false').transform((v) => v === 'true'),
   /** Go GC target for the Trivy child; below 100 trades CPU for a smaller heap. */
   TRIVY_GOGC: int(50, 1),
   GIT_BIN: z.string().min(1).default('git'),

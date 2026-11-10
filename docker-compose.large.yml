@@ -8,3 +8,8 @@ services:
     environment:
       MAX_QUEUED: 1000
       RATE_LIMIT_PER_MIN: 10000
+  # Shared CI runner IPs get HTTP 429 from Maven Central for POM lookups (Retry-After: 30 min). Offline scanning
+  # keeps the run deterministic; the verifier passes --trivy-offline so both sides use identical Trivy flags.
+  scanner:
+    environment:
+      TRIVY_OFFLINE_SCAN: "true"

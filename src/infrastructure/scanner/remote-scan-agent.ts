@@ -93,5 +93,6 @@ function errorFromHeaders(headers: http.IncomingHttpHeaders): ScanError {
       // keep the generic message
     }
   }
-  return new ScanError(code, message, headers['x-error-retryable'] === 'true');
+  const retryAfter = Number(headers['x-error-retry-after-ms']);
+  return new ScanError(code, message, headers['x-error-retryable'] === 'true', Number.isFinite(retryAfter) && retryAfter > 0 ? { retryAfterMs: retryAfter } : {});
 }

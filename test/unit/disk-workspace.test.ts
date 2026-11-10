@@ -41,6 +41,28 @@ describe('DiskWorkspace', () => {
     });
   });
 
+  it('removes a directory with very many entries without touching the Node heap', async () => {
+    const ws = new DiskWorkspace(base, 0, recordingLogger());
+    const { root, repoDir } = await ws.create(ID_A);
+    const flat = path.join(repoDir, 'baselines');
+    fs.mkdirSync(flat, { recursive: true });
+    for (let i = 0; i < 20_000; i += 1) fs.writeFileSync(path.join(flat, `f${i}.txt`), '');
+    const before = process.memoryUsage().rss;
+    await ws.remove(root);
+    expect(fs.existsSync(root)).toBe(false);
+    expect(process.memoryUsage().rss - before).toBeLessThan(20 * 1024 * 1024);
+  });
+
+  it('removes single files and ignores missing paths', async () => {
+    const ws = new DiskWorkspace(base, 0, recordingLogger());
+    const { root } = await ws.create(ID_A);
+    const file = path.join(root, 'report.json');
+    fs.writeFileSync(file, '{}');
+    await ws.remove(file);
+    expect(fs.existsSync(file)).toBe(false);
+    await ws.remove(path.join(root, 'missing'));
+  });
+
   it('removes recursively and never throws', async () => {
     const log = recordingLogger();
     const ws = new DiskWorkspace(base, 0, log);

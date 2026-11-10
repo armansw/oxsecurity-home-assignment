@@ -14,6 +14,11 @@ export interface TrivyScannerOptions {
   readonly goMemLimit: string;
   /** Go GC target percentage (GOGC) for the Trivy process. */
   readonly goGc?: number;
+  /**
+   * `--offline-scan`: no registry lookups (e.g. Maven Central for parent POMs/BOMs). Deterministic and immune to
+   * upstream rate limits, at the cost of not resolving versions inherited from remote POMs.
+   */
+  readonly offlineScan?: boolean;
 }
 
 /**
@@ -39,6 +44,7 @@ export class TrivyScanner implements Scanner {
       '--timeout', `${timeoutSeconds}s`,
       '--cache-dir', this.opts.cacheDir,
     ];
+    if (this.opts.offlineScan === true) args.push('--offline-scan');
     if (this.opts.serverUrl !== undefined) {
       args.push('--server', this.opts.serverUrl);
       if (this.opts.token !== undefined) args.push('--token', this.opts.token);
@@ -100,6 +106,33 @@ export function classifyTrivyError(err: unknown): unknown {
         // Not killed by us (that path is kind=timeout/aborted): almost always the kernel OOM killer.
         return new ScanError('SCANNER_KILLED', 'Trivy was killed by the system (likely out of memory)', true, { cause: err });
       }
-      return new ScanError('SCANNER_FAILED', `Trivy exited with code ${String(err.exitCode)}`, true, { cause: err });
+      if (/\b429\b|too many requests/i.test(err.stderrTail)) {
+        // e.g. Maven Central rate-limiting POM lookups. Retrying within the block window only burns attempts.
+        const retryAfterS = Number(/Retry-After:\s*(\d+)/i.exec(err.stderrTail)?.[1] ?? 600);
+        const retryAfterMs = Math.min(Math.max(retryAfterS, 60), 3600) * 1000;
+        return new ScanError(
+          'UPSTREAM_RATE_LIMITED',
+          `A package registry rate-limited Trivy (HTTP 429); retrying in ${Math.round(retryAfterMs / 60_000)} min: ${trivyReason(err.stderrTail)}`,
+          true,
+          { cause: err, retryAfterMs },
+        );
+      }
+      return new ScanError('SCANNER_FAILED', `Trivy exited with code ${String(err.exitCode)}: ${trivyReason(err.stderrTail)}`, true, {
+        cause: err,
+      });
   }
+}
+
+/**
+ * The most useful line of Trivy's stderr, made safe for API clients: log prefix and timestamp removed, absolute
+ * workspace paths stripped, length capped. The full stderr tail stays in the logs (CommandError.stderrTail).
+ */
+export function trivyReason(stderr: string): string {
+  const lines = stderr.split('\n').map((l) => l.trim()).filter((l) => l.length > 0);
+  const line = [...lines].reverse().find((l) => /\b(FATAL|ERROR)\b/.test(l)) ?? lines.at(-1) ?? 'no error output';
+  return line
+    .replace(/^\S+Z\s+(FATAL|ERROR|WARN|INFO)\s+/, '')
+    .replace(/\/\S*\/scan-[0-9a-f-]{36}(\/repo)?\/?/g, '')
+    .replace(/\s+/g, ' ')
+    .slice(0, 300);
 }

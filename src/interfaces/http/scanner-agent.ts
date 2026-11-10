@@ -83,6 +83,7 @@ async function run(reply: FastifyReply, job: (signal: AbortSignal) => Promise<vo
     if (controller.signal.aborted || (err instanceof CommandError && err.kind === 'aborted')) return await reply.code(499).send();
     const e = err instanceof ScanError ? err : new ScanError('INTERNAL', 'Scanner agent failed unexpectedly', false, { cause: err });
     if (!(err instanceof ScanError)) reply.log.error({ err }, 'scanner agent job failed');
+    if (e.retryAfterMs !== undefined) void reply.header('x-error-retry-after-ms', String(e.retryAfterMs));
     return await reply
       .code(422)
       .header('x-error-code', e.code)

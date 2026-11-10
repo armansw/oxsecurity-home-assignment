@@ -144,7 +144,7 @@ export class ScanProcessor {
         case 'failure': {
           const { error } = outcome;
           if (error.retryable && scan.attempts < this.opts.maxAttempts) {
-            const delay = retryDelayMs(scan.attempts, this.opts.retryBaseMs, this.random);
+            const delay = Math.max(retryDelayMs(scan.attempts, this.opts.retryBaseMs, this.random), error.retryAfterMs ?? 0);
             store.requeue(scan.id, workerId, { runAfter: this.now() + delay, refundAttempt: false });
             this.metrics.recordOutcome('retried', { durationMs, code: error.code });
             log.warn({ err, code: error.code, retryInMs: delay }, 'scan attempt failed; will retry');

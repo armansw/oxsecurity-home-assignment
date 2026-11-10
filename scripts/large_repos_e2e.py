@@ -85,6 +85,7 @@ def ground_truth(repo: str, sha: str, args: argparse.Namespace, scratch: str) ->
     run(
         [args.trivy_bin, "fs", "--scanners", "vuln", "--format", "json", "--output", report, "--quiet",
          "--no-progress", "--parallel", "1", "--timeout", "1800s", "--cache-dir", os.path.join(scratch, "cache"),
+         *(["--offline-scan"] if args.trivy_offline else []),
          "--server", args.trivy_server, "--token", args.trivy_token, src],
         timeout=2400,
     )
@@ -113,12 +114,23 @@ class CgroupReader:
 
     def __init__(self, args: argparse.Namespace) -> None:
         self.args = args
+        self.host_dir = args.cgroup
+        if args.container and not self.host_dir:
+            # Read the container's cgroup from the HOST: `docker exec` would start a runc process inside the
+            # container's own cgroup on every sample and perturb the very memory being measured (it once
+            # triggered an OOM kill in a 150 MB container).
+            full_id = run(["docker", "inspect", "-f", "{{.Id}}", args.container]).strip()
+            for candidate in (f"/sys/fs/cgroup/system.slice/docker-{full_id}.scope", f"/sys/fs/cgroup/docker/{full_id}"):
+                if os.path.exists(os.path.join(candidate, "memory.events")):
+                    self.host_dir = candidate
+                    break
+        print(f"cgroup source: {self.host_dir or 'docker exec (fallback)'}")
 
     def read(self, name: str) -> str:
-        if self.args.container:
-            return run(["docker", "exec", self.args.container, "cat", f"/sys/fs/cgroup/{name}"], timeout=30)
-        with open(os.path.join(self.args.cgroup, name), encoding="utf-8") as fh:
-            return fh.read()
+        if self.host_dir:
+            with open(os.path.join(self.host_dir, name), encoding="utf-8") as fh:
+                return fh.read()
+        return run(["docker", "exec", self.args.container, "cat", f"/sys/fs/cgroup/{name}"], timeout=30)
 
     def events(self) -> dict:
         return {k: int(v) for k, v in (line.split() for line in self.read("memory.events").splitlines())}
@@ -160,11 +172,10 @@ def memory_state(args: argparse.Namespace) -> dict:
         inspect = json.loads(run(["docker", "inspect", args.container]))[0]
         state["oom_killed"] = inspect["State"]["OOMKilled"]
         state["restarts"] = inspect["RestartCount"]
+        state["running"] = inspect["State"]["Running"]
         state["limit_mb"] = inspect["HostConfig"]["Memory"] // (1024 * 1024)
-        try:
-            state["peak_mb"] = int(run(["docker", "exec", args.container, "cat", "/sys/fs/cgroup/memory.peak"])) // (1024 * 1024)
-        except subprocess.CalledProcessError:
-            state["peak_mb"] = None
+        if not state["running"]:
+            return state
         listing = run(["docker", "exec", args.container, "sh", "-c", "ls -A /work | grep '^scan-' || true"])
         state["leftover_workspaces"] = len([line for line in listing.splitlines() if line.strip()])
     elif args.cgroup:
@@ -266,6 +277,7 @@ def main() -> int:
     p.add_argument("--trivy-server", required=True)
     p.add_argument("--trivy-token", required=True)
     p.add_argument("--trivy-bin", default="trivy")
+    p.add_argument("--trivy-offline", action="store_true", help="the service runs with TRIVY_OFFLINE_SCAN=true; match it")
     p.add_argument("--container", help="docker container id of the service (for OOM/peak/workspace checks)")
     p.add_argument("--cgroup", help="cgroup v2 directory of the service (systemd deployment)")
     p.add_argument("--work-dir", help="service WORK_DIR (with --cgroup) to check for leftover workspaces")
@@ -318,8 +330,13 @@ def main() -> int:
             sampler.stop()
 
     # Memory verdict for the whole run: kernel counters are exact, sampling only reports peaks.
+    after: dict | None = None
     if reader and sampler:
-        after = reader.events()
+        try:
+            after = reader.events()
+        except (OSError, subprocess.SubprocessError) as exc:
+            run_problems.append(f"service cgroup disappeared (container died?): {exc}")
+    if reader and sampler and after is not None:
         hit_max = after.get("max", 0) - before.get("max", 0)
         kills = after.get("oom_kill", 0) - before.get("oom_kill", 0)
         mem = {"limit_mb": limit_mb, "total_peak_mb": sampler.peak_total // 1048576, "ws_peak_mb": sampler.peak_ws // 1048576,
@@ -334,6 +351,8 @@ def main() -> int:
     else:
         mem = {}
     state = memory_state(args)
+    if args.container and not state.get("running", True):
+        run_problems.append("service container is not running")
     if state.get("oom_killed"):
         run_problems.append("service was OOM-killed")
     if state.get("restarts"):

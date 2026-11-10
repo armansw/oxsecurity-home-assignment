@@ -124,6 +124,17 @@ describe('ScanProcessor', () => {
     expect(outcomes).toEqual(['retried:SCANNER_FAILED']);
   });
 
+  it('waits at least the upstream Retry-After before retrying', async () => {
+    const scan = claim();
+    const scanner = new FakeScanner(() => Promise.reject(new ScanError('UPSTREAM_RATE_LIMITED', 'Maven Central 429', true, { retryAfterMs: 1_800_000 })));
+    await processor({ scanner }).p.run(scan, WORKER, new AbortController().signal);
+    expect(store.findById(scan.id)).toMatchObject({ status: 'Queued' });
+    clock += 1_799_000;
+    expect(store.claimNext(WORKER)).toBeUndefined();
+    clock += 1_000;
+    expect(store.claimNext(WORKER)?.id).toBe(scan.id);
+  });
+
   it('fails permanently once attempts are exhausted', async () => {
     store.create('https://github.com/a/b.git');
     let scan = store.claimNext(WORKER)!;

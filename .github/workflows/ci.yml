@@ -127,7 +127,7 @@ jobs:
         run: docker compose -f docker-compose.yml -f docker-compose.150m.yml -f docker-compose.large.yml up --build -d --wait app
       - name: Scan large repositories and verify every CRITICAL finding
         run: |
-          python3 -u scripts/large_repos_e2e.py --strict-limit --api http://localhost:3000 \
+          python3 -u scripts/large_repos_e2e.py --trivy-offline --strict-limit --api http://localhost:3000 \
             --trivy-server http://localhost:4954 --trivy-token change-me-local-token \
             --container "$(docker compose ps -q app)" --json-out large-repos.json
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

@@ -1,8 +1,9 @@
-import { mkdir, readdir, rm, statfs } from 'node:fs/promises';
+import { lstat, mkdir, readdir, rm, statfs } from 'node:fs/promises';
 import path from 'node:path';
 import { ScanError } from '../../domain/errors.js';
 import type { Logger, ScanWorkspace, Workspace } from '../../domain/ports.js';
 import { isScanId, type ScanId } from '../../domain/scan.js';
+import { baseChildEnv, runCommand } from '../process/run-command.js';
 
 const PREFIX = 'scan-';
 
@@ -50,9 +51,32 @@ export class DiskWorkspace implements Workspace {
     }
   }
 
+  /**
+   * Deletes a file or directory tree with bounded memory.
+   *
+   * Directories are removed by an `rm -rf` child process, not by `fs.promises.rm`: Node's recursive delete
+   * issues one concurrent unlink per directory entry, so a checkout with ~100k files in one directory
+   * (microsoft/TypeScript's test baselines) spikes the service's own memory by ~100 MB. Found by the
+   * large-repository corpus test, where it OOM-killed a 150 MB container.
+   */
   async remove(target: string): Promise<void> {
     try {
-      await rm(target, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+      const info = await lstat(target).catch((err: unknown) => {
+        if (typeof err === 'object' && err !== null && 'code' in err && err.code === 'ENOENT') return null; // already gone
+        throw err;
+      });
+      if (info === null) return;
+      if (!info.isDirectory()) {
+        await rm(target, { force: true });
+        return;
+      }
+      await runCommand('rm', {
+        args: ['-rf', '--', target],
+        env: baseChildEnv(),
+        timeoutMs: 30 * 60 * 1000,
+        signal: AbortSignal.timeout(31 * 60 * 1000),
+        oomScoreAdj: 1000,
+      });
     } catch (err) {
       // Never mask the scan's real outcome; the janitor retries orphans later.
       this.log.warn({ err, path: target }, 'workspace cleanup failed');
