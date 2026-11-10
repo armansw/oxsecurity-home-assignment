@@ -1,0 +1,23 @@
+[Unit]
+Description=Code Guardian - Trivy server (vulnerability DB sidecar)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+EnvironmentFile=/etc/code-guardian/env
+ExecStart=/usr/local/bin/trivy server --listen 127.0.0.1:4954 --token ${TRIVY_TOKEN} --cache-dir /var/lib/code-guardian-trivy
+DynamicUser=yes
+StateDirectory=code-guardian-trivy
+Environment=HOME=/var/lib/code-guardian-trivy
+Restart=on-failure
+RestartSec=5
+CPUQuota=60%
+Nice=10
+MemoryMax=1G
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target
