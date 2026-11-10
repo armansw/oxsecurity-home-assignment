@@ -10,3 +10,5 @@ fixtures/
 web/node_modules/
 web/dist/
 .cg-env/
+__pycache__/
+*.pyc
