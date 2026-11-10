@@ -13,6 +13,7 @@ A backend service that wraps the [Trivy](https://trivy.dev) scanner. It clones a
 | 600 MB report (280,839 findings, every one in one `Results[0]`) parsed under `--max-old-space-size=150` | **47 MB** | 130 MB | all 14,041 CRITICAL stored, 25 s |
 | Real Trivy scan of OWASP NodeGoat | — | 112 MB | 93 findings scanned, 12 CRITICAL stored, 2.2 s |
 | **Docker, `mem_limit: 200m`, no swap** (CI): the 600 MB report through the full service | — | container peak 97 MiB* | `Finished`, 14,041/14,041 CRITICAL, `OOMKilled=false`, workspace empty |
+| **Docker, `mem_limit: 150m`, no swap** (CI): the same 600 MB report, tighter than the brief | — | container peak 94 MiB* | `Finished`, 14,041/14,041 CRITICAL, `OOMKilled=false` |
 | **Docker, `mem_limit: 200m`** (CI): real Trivy scan of NodeGoat | — | — | `Finished`, 12 CRITICAL, `OOMKilled=false`, workspace empty |
 
 The 25 s figure was measured with the process capped at 60 % of one CPU. \*`docker stats` usage, which excludes reclaimable page cache. See [Proving the memory claim](#proving-the-memory-claim), where every number comes from an actual run.
