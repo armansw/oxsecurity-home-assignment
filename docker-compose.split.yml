@@ -1,0 +1,31 @@
+# API and worker as separate containers (same image, ROLE switch), each limited to 200 MB.
+# A runaway scan can then never take the API down with it.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.split.yml up --build
+services:
+  app:
+    environment:
+      ROLE: api
+    volumes:
+      - app-data:/data
+  worker:
+    build: .
+    init: true
+    mem_limit: 200m
+    memswap_limit: 200m
+    pids_limit: 256
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    stop_grace_period: 15s
+    environment:
+      ROLE: worker
+      DATABASE_PATH: /data/code-guardian.db
+      WORK_DIR: /work
+      TRIVY_SERVER_URL: http://trivy:4954
+      TRIVY_TOKEN: ${TRIVY_TOKEN:-change-me-local-token}
+    volumes:
+      - app-data:/data
+      - app-work:/work
+    depends_on:
+      trivy:
+        condition: service_healthy

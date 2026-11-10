@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: backend (node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: [22, 24]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run test:coverage
+      - name: Forbidden APIs are absent from src/
+        run: "! grep -rnE 'JSON\\.parse\\(|readFile(Sync)?\\(' src/"
+      - name: OOM check — 600 MB report under --max-old-space-size=150
+        run: npm run oom:check
+      - name: OOM check — every finding CRITICAL (stresses the store path)
+        run: node --max-old-space-size=150 dist/scripts/oom-check.js --size-mb 300 --critical-ratio 1
+
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run test:coverage
+      - run: npm run build
+
+  docker-e2e:
+    name: docker e2e (${{ matrix.mode }}, mem_limit 200m)
+    needs: [backend]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [trivy, fixture]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Start stack
+        run: |
+          files="-f docker-compose.yml"
+          [ "${{ matrix.mode }}" = fixture ] && files="$files -f docker-compose.oom.yml"
+          docker compose $files up --build -d --wait app
+      - name: Scan inside the 200 MB container
+        run: ./scripts/e2e-docker.sh ${{ matrix.mode == 'fixture' && '--fixture' || '' }}
+      - name: Logs
+        if: always()
+        run: docker compose logs --tail 200 app trivy

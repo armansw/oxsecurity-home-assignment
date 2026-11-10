@@ -1,0 +1,12 @@
+# OOM proof: the real pipeline (clone → "scan" → stream-parse → store → API) with a synthetic 600 MB
+# single-Result Trivy report, inside the same 200 MB container.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.oom.yml up --build -d
+#   ./scripts/e2e-docker.sh --fixture
+services:
+  app:
+    environment:
+      SCANNER: fixture
+      FIXTURE_SIZE_MB: ${FIXTURE_SIZE_MB:-600}
+      FIXTURE_CRITICAL_RATIO: ${FIXTURE_CRITICAL_RATIO:-0.05}
+      MIN_FREE_DISK_MB: 700

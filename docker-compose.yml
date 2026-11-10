@@ -1,0 +1,58 @@
+# Code Guardian: API + worker under a 200 MB memory limit (Bonus C), Trivy server, React UI.
+#
+#   docker compose up --build
+#   UI → http://localhost:8080   API → http://localhost:3000   GraphiQL → set NODE_ENV=development
+#
+# See docker-compose.oom.yml for the 600 MB report proof and docker-compose.split.yml for separate
+# API / worker containers.
+services:
+  app:
+    build: .
+    init: true                       # reap git/trivy children; forward signals for graceful shutdown
+    mem_limit: 200m                  # the constraint under test
+    memswap_limit: 200m              # no swap: a leak must fail loudly, not hide in swap
+    pids_limit: 256
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    stop_grace_period: 15s
+    environment:
+      ROLE: all
+      LOG_LEVEL: info
+      DATABASE_PATH: /data/code-guardian.db
+      # Disk-backed named volume. Never tmpfs: a 500 MB report on tmpfs is charged to this container's
+      # memory limit and would OOM-kill it no matter how well the parser streams (docs/MEMORY.md).
+      WORK_DIR: /work
+      TRIVY_SERVER_URL: http://trivy:4954
+      TRIVY_TOKEN: ${TRIVY_TOKEN:-change-me-local-token}
+      MIN_FREE_DISK_MB: ${MIN_FREE_DISK_MB:-1024}
+    volumes:
+      - app-data:/data
+      - app-work:/work
+    ports: ["3000:3000"]
+    depends_on:
+      trivy:
+        condition: service_healthy
+
+  # Infrastructure sidecar, like a database: holds the ~1.7 GB vulnerability DB, downloads and updates it,
+  # so neither the DB download nor its memory-mapped pages land inside the app's 200 MB limit.
+  trivy:
+    image: aquasec/trivy:0.76.1@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c
+    command: ["server", "--listen", "0.0.0.0:4954", "--token", "${TRIVY_TOKEN:-change-me-local-token}", "--cache-dir", "/cache"]
+    volumes:
+      - trivy-cache:/cache
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:4954/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 60
+      start_period: 180s             # first boot downloads the vulnerability DB
+
+  web:
+    build: ./web
+    ports: ["8080:80"]
+    depends_on: [app]
+
+volumes:
+  app-data: {}
+  app-work: {}
+  trivy-cache: {}
