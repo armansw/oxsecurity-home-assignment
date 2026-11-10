@@ -16,7 +16,8 @@ export interface ScanControllerDeps {
   readonly service: ScanService;
   readonly store: ScanStore;
   readonly responsePageSize: number;
-  readonly rateLimitPerMinute: number;
+  /** Scan-creation rate limit (the GraphQL startScan mutation has the same limit). */
+  readonly rateLimit: { readonly max: number; readonly timeWindow: string };
 }
 
 /**
@@ -29,7 +30,7 @@ export function registerScanRoutes(app: FastifyInstance, deps: ScanControllerDep
     '/api/scan',
     {
       bodyLimit: 4096,
-      config: { rateLimit: { max: deps.rateLimitPerMinute, timeWindow: '1 minute' } },
+      config: { rateLimit: { ...deps.rateLimit } },
     },
     async (request, reply) => {
       const { repoUrl } = StartScanBody.parse(request.body);

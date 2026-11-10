@@ -55,13 +55,18 @@ jobs:
       - run: npm run build
 
   docker-e2e:
-    name: docker e2e (${{ matrix.mode }}, mem_limit 200m)
+    name: docker e2e (${{ matrix.mode }}, mem_limit ${{ matrix.mem }})
     needs: [backend]
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        mode: [trivy, fixture]
+        include:
+          - { mode: trivy, mem: 200m }
+          - { mode: fixture, mem: 200m }
+          - { mode: fixture, mem: 150m }   # tighter than the brief: 600 MB report in a 150 MB container
+    env:
+      APP_MEM_LIMIT: ${{ matrix.mem }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Start stack

@@ -169,6 +169,7 @@ GET  /api/scan/<id>  → Finished in 2.2 s · 93 scanned · 12 CRITICAL · worke
 | `GET` | `/api/scan/:scanId?limit=100&cursor=…` | one page + `nextCursor`, as the UI uses it |
 | `GET` | `/healthz` | liveness + process memory |
 | `GET` | `/readyz` | database, scanner, free disk, worker; 503 if any check fails |
+| `GET` | `/metrics` | Prometheus: scan outcomes by error code, duration, **peak RSS per scan**, report size, queue depth, heap/GC. Not exposed through the public proxy |
 
 The status response is a discriminated union on `status`:
 
@@ -193,7 +194,7 @@ Other behaviour:
   - `400`: invalid URL, body, id or cursor
   - `404`: unknown scan
   - `413`: body too large
-  - `429`: queue full, with `Retry-After`; or rate limited, at 30 POSTs per minute per IP
+  - `429`: queue full, with `Retry-After`; or rate limited. Scan *creation* is limited per IP on both transports (`POST /api/scan` and the GraphQL `startScan` mutation, which returns `extensions.code: RATE_LIMITED`). Status polling is never limited. Client IPs come from `X-Forwarded-For` only when the peer is a trusted proxy (`TRUST_PROXY`)
   - `503`: not enough disk to accept work
   - `500`: unexpected; the response is generic and the detail goes to logs only
 
@@ -284,7 +285,7 @@ src/
   interfaces/      REST controller · GraphQL · error mapping · health
   scripts/         oom-check, generate-fixture
   index.ts         composition root (the only place that knows concrete classes)
-test/              unit/ + integration/ (198 tests)
+test/              unit/ + integration/ (221 tests)
 web/               React client (Bonus A)
 docs/              ARCHITECTURE.md, MEMORY.md
 ```
@@ -297,13 +298,14 @@ docs/              ARCHITECTURE.md, MEMORY.md
 | `npm run oom:check` | 600 MB memory proof |
 | `npm run fixture:generate -- --size-mb 600 --out r.json` | write a synthetic report |
 
-**Tests:** 198 backend tests and 75 frontend tests. Backend coverage is 99.7 % lines and 93.8 % branches, enforced at 95 % / 90 % in CI. The tests run the tokenizer at every chunk size down to 1 character, including multibyte UTF-8. They also drive git and Trivy through fake binaries and run the HTTP stack end-to-end with a real worker.
+**Tests:** 221 backend tests and 75 frontend tests. Backend coverage is 99.5 % lines and 94 % branches, enforced at 95 % / 90 % in CI. The tests run the tokenizer at every chunk size down to 1 character, including multibyte UTF-8. They also drive git and Trivy through fake binaries and run the HTTP stack end-to-end with a real worker.
 
 **Configuration:** all variables are optional and validated at boot. See [.env.example](.env.example). The important ones:
 
 | Variable | Default | |
 |---|---|---|
-| `ROLE` | `all` | `all` \| `api` \| `worker` |
+| `ROLE` | `all` | `all` \| `api` \| `worker` (a worker still serves `/healthz`, `/readyz`, `/metrics` for probes) |
+| `TRUST_PROXY` | `false` | `true`, or trusted proxy addresses such as `loopback` / `uniquelocal` |
 | `DATABASE_PATH` | `./data/code-guardian.db` | |
 | `WORK_DIR` | `$TMPDIR/code-guardian` | must be disk-backed |
 | `TRIVY_SERVER_URL` / `TRIVY_TOKEN` | unset | client/server mode |
@@ -320,6 +322,6 @@ Deliberately out of scope for a home assignment, but this is the path:
 - **Scale-out queue:** Postgres with `SKIP LOCKED` (same lease semantics), or BullMQ, behind the existing `ScanStore` port. Run workers as their own Deployment (see `docker-compose.split.yml`).
 - **Sandboxing:** cloning untrusted repositories is a hostile-input problem. Run workers in gVisor or Firecracker with egress limited to GitHub and the Trivy server.
 - **Authentication and quotas:** tenant scoping on scans, plus per-tenant rate limits.
-- **Observability:** Prometheus metrics (queue depth, scan duration, peak RSS per scan, failure codes) and OpenTelemetry traces across API → worker → child processes.
+- **Observability:** Prometheus metrics are in place (`/metrics`); next come alerts on `code_guardian_scan_peak_rss_bytes` approaching the limit and on `SCANNER_KILLED` / `WORKER_CRASHED` rates, plus OpenTelemetry traces across API → worker → child processes.
 - **Push instead of poll:** SSE or webhooks on completion. Polling is kept here because the brief asks for it.
 - **Report retention:** if raw reports must be kept, stream them to object storage instead of deleting them.

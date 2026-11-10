@@ -9,6 +9,7 @@ import type { SqliteScanStore } from '../../src/infrastructure/db/sqlite-scan.st
 import { DiskWorkspace } from '../../src/infrastructure/fs/disk-workspace.js';
 import { StreamReportProcessor } from '../../src/infrastructure/report/stream-report-processor.js';
 import { buildApp } from '../../src/interfaces/http/app.js';
+import { PrometheusMetrics } from '../../src/infrastructure/metrics/prometheus-metrics.js';
 import type { ReadinessCheck } from '../../src/interfaces/http/health.controller.js';
 import { Worker } from '../../src/worker/worker.js';
 import { FakeFetcher, FakeScanner, memoryStore, recordingLogger, report, tempDir, vuln, waitFor } from '../helpers/index.js';
@@ -35,7 +36,7 @@ interface Harness {
   dir: string;
 }
 
-async function harness(opts: { scanner?: Scanner; maxQueued?: number; readyChecks?: Record<string, ReadinessCheck>; rateLimit?: number } = {}): Promise<Harness> {
+async function harness(opts: { scanner?: Scanner; maxQueued?: number; readyChecks?: Record<string, ReadinessCheck>; rateLimit?: number; withMetrics?: boolean } = {}): Promise<Harness> {
   const dir = tempDir();
   const store = memoryStore();
   const log = recordingLogger();
@@ -63,6 +64,7 @@ async function harness(opts: { scanner?: Scanner; maxQueued?: number; readyCheck
     service,
     store,
     readiness: () => Promise.resolve(opts.readyChecks ?? { database: { ok: true, detail: 'ok' } }),
+    metrics: opts.withMetrics ? new PrometheusMetrics(store, { collectDefaults: false }) : undefined,
     logger: false,
     responsePageSize: 7,
     rateLimitPerMinute: opts.rateLimit ?? 1000,
@@ -265,6 +267,25 @@ describe('REST API — failures and limits', () => {
     }
   });
 
+  it('rate-limits the GraphQL startScan mutation too, but never status polling', async () => {
+    const h = await harness({ rateLimit: 2 });
+    try {
+      const id = await startScan(h, 'https://github.com/a/one');
+      const gql = (query: string) => h.app.inject({ method: 'POST', url: '/graphql', payload: { query } });
+      expect((await gql('mutation { startScan(repoUrl: "https://github.com/a/two") { id } }')).statusCode).toBe(200);
+      expect((await gql('mutation { startScan(repoUrl: "https://github.com/a/three") { id } }')).statusCode).toBe(200);
+      const third = await gql('mutation { startScan(repoUrl: "https://github.com/a/four") { id } }');
+      expect(third.statusCode).toBe(429);
+      expect(third.json<{ errors: { extensions: { code: string } }[] }>().errors[0]?.extensions.code).toBe('RATE_LIMITED');
+      for (let i = 0; i < 10; i += 1) {
+        expect((await gql(`{ scan(id: "${id}") { status } }`)).statusCode).toBe(200);
+        expect((await h.app.inject({ method: 'GET', url: `/api/scan/${id}` })).statusCode).toBe(200);
+      }
+    } finally {
+      await teardown(h);
+    }
+  });
+
   it('rate-limits POST /api/scan per client', async () => {
     const h = await harness({ rateLimit: 2 });
     try {
@@ -294,6 +315,18 @@ describe('REST API — failures and limits', () => {
 });
 
 describe('health endpoints', () => {
+  it('/metrics exposes Prometheus metrics when configured', async () => {
+    const h = await harness({ withMetrics: true });
+    try {
+      const res = await h.app.inject({ method: 'GET', url: '/metrics' });
+      expect(res.statusCode).toBe(200);
+      expect(res.headers['content-type']).toContain('text/plain');
+      expect(res.body).toContain('code_guardian_queue_depth');
+    } finally {
+      await teardown(h);
+    }
+  });
+
   it('/healthz reports liveness and memory', async () => {
     const h = await harness();
     try {

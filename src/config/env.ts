@@ -11,6 +11,14 @@ const EnvSchema = z.object({
   PORT: int(3000, 0).pipe(z.number().max(65_535)),
   /** all = API + worker in one process (default, so `node dist/index.js` is a complete system). */
   ROLE: z.enum(['all', 'api', 'worker']).default('all'),
+  /**
+   * Which proxies may set X-Forwarded-For (client IP for rate limiting). `false` (default) when the port is
+   * exposed directly; `true` or an address list such as `loopback` / `127.0.0.1` behind a reverse proxy.
+   */
+  TRUST_PROXY: z
+    .string()
+    .default('false')
+    .transform((v): boolean | string => (v === 'true' ? true : v === 'false' ? false : v)),
 
   DATABASE_PATH: z.string().min(1).default('./data/code-guardian.db'),
   /** Must be disk-backed. A tmpfs workspace charges the report to the memory cgroup (docs/MEMORY.md). */

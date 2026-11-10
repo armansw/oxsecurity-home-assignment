@@ -86,6 +86,17 @@ export interface Workspace {
   removeOrphans(isActive: (id: ScanId) => boolean): Promise<number>;
 }
 
+export type ScanOutcome = 'finished' | 'failed' | 'retried' | 'requeued' | 'lease_lost';
+
+/** Observability port: the processor reports outcomes; an adapter (Prometheus) turns them into metrics. */
+export interface ScanMetrics {
+  recordOutcome(outcome: ScanOutcome, info: { readonly durationMs: number; readonly code?: string; readonly stats?: ScanStats }): void;
+}
+
+export const noopMetrics: ScanMetrics = {
+  recordOutcome: () => undefined,
+};
+
 export type ReportStats = Pick<ScanStats, 'reportBytes' | 'vulnerabilitiesScanned' | 'criticalCount' | 'malformedSkipped'>;
 
 export interface ReportProcessor {

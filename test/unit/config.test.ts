@@ -8,6 +8,7 @@ describe('loadConfig', () => {
     const c = loadConfig({});
     expect(c).toMatchObject({
       ROLE: 'all',
+      TRUST_PROXY: false,
       PORT: 3000,
       SCANNER: 'trivy',
       MAX_ATTEMPTS: 3,
@@ -31,6 +32,15 @@ describe('loadConfig', () => {
       FIXTURE_CRITICAL_RATIO: '0.5',
     });
     expect(c).toMatchObject({ PORT: 8080, ROLE: 'worker', ALLOWED_GIT_HOSTS: ['github.com', 'gitlab.com'], trivyCacheDir: '/cache', FIXTURE_CRITICAL_RATIO: 0.5 });
+  });
+
+  it.each([
+    ['false', false],
+    ['true', true],
+    ['loopback', 'loopback'],
+    ['127.0.0.1,10.0.0.0/8', '127.0.0.1,10.0.0.0/8'],
+  ])('parses TRUST_PROXY=%s', (value, expected) => {
+    expect(loadConfig({ TRUST_PROXY: value }).TRUST_PROXY).toBe(expected);
   });
 
   it.each([

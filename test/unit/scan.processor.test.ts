@@ -30,6 +30,11 @@ describe('ScanProcessor', () => {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
+  const outcomes: string[] = [];
+  beforeEach(() => {
+    outcomes.length = 0;
+  });
+
   function processor(
     parts: { fetcher?: RepositoryFetcher; scanner?: Scanner; reports?: ReportProcessor; ws?: Workspace } = {},
     opts: Partial<ConstructorParameters<typeof ScanProcessor>[1]> = {},
@@ -45,6 +50,7 @@ describe('ScanProcessor', () => {
         reports: parts.reports ?? new StreamReportProcessor(store, { batchSize: 10, maxValueBytes: 1 << 20 }),
         now: () => clock,
         random: () => 0.5,
+        metrics: { recordOutcome: (o, info) => outcomes.push(info.code ? `${o}:${info.code}` : o) },
       },
       { maxAttempts: 3, heartbeatMs: 5, retryBaseMs: 1000, memorySampleMs: 1, ...opts },
     );
@@ -71,6 +77,7 @@ describe('ScanProcessor', () => {
     expect(store.listVulnerabilities(scan.id, { afterRowId: 0, limit: 10 }).map((v) => v.vulnerabilityId)).toEqual(['CVE-1']);
     expect(fetcher.calls).toEqual(['https://github.com/a/b.git']);
     expect(workspaceIsEmpty()).toBe(true);
+    expect(outcomes).toEqual(['finished']);
   });
 
   it('deletes the clone before parsing starts', async () => {
@@ -113,6 +120,7 @@ describe('ScanProcessor', () => {
     clock += 1000;
     expect(store.claimNext(WORKER)?.id).toBe(scan.id);
     expect(workspaceIsEmpty()).toBe(true);
+    expect(outcomes).toEqual(['retried:SCANNER_FAILED']);
   });
 
   it('fails permanently once attempts are exhausted', async () => {
@@ -135,6 +143,7 @@ describe('ScanProcessor', () => {
     await processor({ fetcher }).p.run(scan, WORKER, new AbortController().signal);
     expect(store.findById(scan.id)).toMatchObject({ status: 'Failed', error: { code: 'REPO_NOT_FOUND' } });
     expect(workspaceIsEmpty()).toBe(true);
+    expect(outcomes).toEqual(['failed:REPO_NOT_FOUND']);
   });
 
   it('maps a full disk (ENOSPC) to DISK_FULL and still cleans up', async () => {
@@ -186,6 +195,7 @@ describe('ScanProcessor', () => {
     await processor({ scanner }).p.run(scan, WORKER, shutdown.signal);
     expect(sawAbort).toBe(true);
     expect(store.findById(scan.id)).toMatchObject({ status: 'Queued', attempts: 0 });
+    expect(outcomes).toEqual(['requeued']);
     expect(workspaceIsEmpty()).toBe(true);
   });
 
@@ -228,6 +238,7 @@ describe('ScanProcessor', () => {
     await p.run(scan, WORKER, new AbortController().signal);
     expect(store.findById(scan.id)?.status).toBe('Queued');
     expect(log.entries.some((e) => e.msg.includes('result discarded'))).toBe(true);
+    expect(outcomes).toEqual(['lease_lost']);
   });
 
   it('survives failing heartbeats and failing outcome writes', async () => {

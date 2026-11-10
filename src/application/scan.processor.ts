@@ -1,5 +1,5 @@
 import { LeaseLostError } from '../domain/errors.js';
-import type { Clock, Logger, ReportProcessor, RepositoryFetcher, Scanner, ScanStore, ScanWorkspace, Workspace } from '../domain/ports.js';
+import { noopMetrics, type Clock, type Logger, type ReportProcessor, type RepositoryFetcher, type Scanner, type ScanMetrics, type ScanStore, type ScanWorkspace, type Workspace } from '../domain/ports.js';
 import type { Scan, ScanPhase } from '../domain/scan.js';
 import { classifyFailure, retryDelayMs } from '../infrastructure/errors/classify-error.js';
 
@@ -10,6 +10,7 @@ export interface ScanProcessorDeps {
   readonly reports: ReportProcessor;
   readonly workspace: Workspace;
   readonly log: Logger;
+  readonly metrics?: ScanMetrics;
   readonly now?: Clock;
   readonly random?: () => number;
 }
@@ -28,6 +29,7 @@ export interface ScanProcessorOptions {
 export class ScanProcessor {
   private readonly now: Clock;
   private readonly random: () => number;
+  private readonly metrics: ScanMetrics;
 
   constructor(
     private readonly deps: ScanProcessorDeps,
@@ -35,6 +37,7 @@ export class ScanProcessor {
   ) {
     this.now = deps.now ?? Date.now;
     this.random = deps.random ?? Math.random;
+    this.metrics = deps.metrics ?? noopMetrics;
   }
 
   async run(scan: Scan, workerId: string, shutdown: AbortSignal): Promise<void> {
@@ -102,15 +105,17 @@ export class ScanProcessor {
       throwIfAborted(job.signal);
 
       peakRss = Math.max(peakRss, process.memoryUsage.rss());
-      const finished = store.markFinished(scan.id, workerId, {
-        ...stats,
-        durationMs: this.now() - started,
-        peakRssMb: Math.round(peakRss / (1024 * 1024)),
-      });
-      if (finished) log.info({ ...stats, durationMs: this.now() - started }, 'scan finished');
-      else log.warn('scan finished but lease was lost; result discarded');
+      const fullStats = { ...stats, durationMs: this.now() - started, peakRssMb: Math.round(peakRss / (1024 * 1024)) };
+      const finished = store.markFinished(scan.id, workerId, fullStats);
+      if (finished) {
+        this.metrics.recordOutcome('finished', { durationMs: fullStats.durationMs, stats: fullStats });
+        log.info(fullStats, 'scan finished');
+      } else {
+        this.metrics.recordOutcome('lease_lost', { durationMs: fullStats.durationMs });
+        log.warn('scan finished but lease was lost; result discarded');
+      }
     } catch (err) {
-      this.handleFailure(scan, workerId, err, job.signal, log);
+      this.handleFailure(scan, workerId, err, job.signal, log, this.now() - started);
     } finally {
       clearInterval(heartbeat);
       clearInterval(sampler);
@@ -119,15 +124,17 @@ export class ScanProcessor {
     }
   }
 
-  private handleFailure(scan: Scan, workerId: string, err: unknown, signal: AbortSignal, log: Logger): void {
+  private handleFailure(scan: Scan, workerId: string, err: unknown, signal: AbortSignal, log: Logger, durationMs: number): void {
     const { store } = this.deps;
     const outcome = classifyFailure(err, signal);
     try {
       switch (outcome.kind) {
         case 'lease-lost':
+          this.metrics.recordOutcome('lease_lost', { durationMs });
           log.warn('lease lost; another worker owns this scan now');
           return;
         case 'shutdown':
+          this.metrics.recordOutcome('requeued', { durationMs });
           // Not the job's fault: give the attempt back and let the next worker start immediately.
           store.requeue(scan.id, workerId, { runAfter: this.now(), refundAttempt: true });
           log.info('scan re-queued on shutdown');
@@ -137,10 +144,12 @@ export class ScanProcessor {
           if (error.retryable && scan.attempts < this.opts.maxAttempts) {
             const delay = retryDelayMs(scan.attempts, this.opts.retryBaseMs, this.random);
             store.requeue(scan.id, workerId, { runAfter: this.now() + delay, refundAttempt: false });
+            this.metrics.recordOutcome('retried', { durationMs, code: error.code });
             log.warn({ err, code: error.code, retryInMs: delay }, 'scan attempt failed; will retry');
             return;
           }
           store.markFailed(scan.id, workerId, { code: error.code, message: error.message });
+          this.metrics.recordOutcome('failed', { durationMs, code: error.code });
           log.error({ err, code: error.code }, 'scan failed');
           return;
         }

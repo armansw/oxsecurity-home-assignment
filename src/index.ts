@@ -18,7 +18,8 @@ import { GitRepositoryFetcher } from './infrastructure/git/git-repository-fetche
 import { StreamReportProcessor } from './infrastructure/report/stream-report-processor.js';
 import { FixtureScanner } from './infrastructure/scanner/fixture-scanner.js';
 import { TrivyScanner } from './infrastructure/scanner/trivy-scanner.js';
-import { buildApp } from './interfaces/http/app.js';
+import { buildApp, buildOpsApp } from './interfaces/http/app.js';
+import { PrometheusMetrics } from './infrastructure/metrics/prometheus-metrics.js';
 import type { ReadinessCheck } from './interfaces/http/health.controller.js';
 import { Worker } from './worker/worker.js';
 
@@ -42,6 +43,7 @@ async function main(): Promise<void> {
           goMemLimit: config.TRIVY_GOMEMLIMIT,
         });
 
+  const metrics = new PrometheusMetrics(store);
   const runsWorker = config.ROLE !== 'api';
   const runsApi = config.ROLE !== 'worker';
 
@@ -56,6 +58,7 @@ async function main(): Promise<void> {
               store,
               workspace,
               log: log.child({ component: 'processor' }),
+              metrics,
               fetcher: new GitRepositoryFetcher({ gitBin: config.GIT_BIN, timeoutMs: config.CLONE_TIMEOUT_MS }),
               scanner,
               reports: new StreamReportProcessor(store, { batchSize: config.BATCH_SIZE, maxValueBytes: config.MAX_JSON_VALUE_BYTES }),
@@ -85,6 +88,15 @@ async function main(): Promise<void> {
     ...(worker ? { wake: () => { worker.wake(); }, checkCapacity: () => workspace.assertFreeSpace() } : {}),
   });
 
+  // Probes can be frequent; never spawn `trivy --version` more than once per 30 s.
+  let scannerCheck: { at: number; result: ReadinessCheck } | undefined;
+  const checkScanner = async (): Promise<ReadinessCheck> => {
+    if (scannerCheck === undefined || Date.now() - scannerCheck.at > 30_000) {
+      scannerCheck = { at: Date.now(), result: await scanner.checkAvailable() };
+    }
+    return scannerCheck.result;
+  };
+
   const readiness = async (): Promise<Record<string, ReadinessCheck>> => {
     const checks: Record<string, ReadinessCheck> = {};
     try {
@@ -93,7 +105,7 @@ async function main(): Promise<void> {
       checks.database = { ok: false, detail: err instanceof Error ? err.message : String(err) };
     }
     if (runsWorker) {
-      checks.scanner = await scanner.checkAvailable();
+      checks.scanner = await checkScanner();
       const free = await workspace.freeBytes().catch(() => 0);
       checks.disk = { ok: free >= config.MIN_FREE_DISK_MB * 1024 * 1024, detail: `${Math.floor(free / 1024 / 1024)} MB free` };
       checks.worker = { ok: worker?.running ?? false, detail: worker?.id ?? 'none' };
@@ -106,15 +118,17 @@ async function main(): Promise<void> {
         service,
         store,
         readiness,
+        metrics,
+        trustProxy: config.TRUST_PROXY,
         logger: log,
         responsePageSize: config.RESPONSE_PAGE_SIZE,
         rateLimitPerMinute: config.RATE_LIMIT_PER_MIN,
         graphiql: config.NODE_ENV !== 'production',
       })
-    : undefined;
+    : buildOpsApp({ readiness, metrics, trustProxy: config.TRUST_PROXY, logger: log }); // ROLE=worker: health + metrics only
 
   worker?.start();
-  if (app) await app.listen({ host: config.HOST, port: config.PORT });
+  await app.listen({ host: config.HOST, port: config.PORT });
 
   let stopping = false;
   const shutdown = async (signal: string): Promise<void> => {
@@ -127,7 +141,7 @@ async function main(): Promise<void> {
     }, config.SHUTDOWN_GRACE_MS + 2000);
     hardExit.unref();
     try {
-      await app?.close(); // stop accepting requests first
+      await app.close(); // stop accepting requests first
       await worker?.stop(config.SHUTDOWN_GRACE_MS); // in-flight scan is re-queued, workspace removed
     } finally {
       store.close();
