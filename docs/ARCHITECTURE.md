@@ -116,7 +116,7 @@ The public status is exactly the brief's four values. `phase` (`cloning | scanni
 | Trivy not installed | spawn `ENOENT` | `SCANNER_UNAVAILABLE` | no |
 | Trivy exits non-zero (DB download, server down, …) | exit code; the sanitized last FATAL line becomes the message | `SCANNER_FAILED` | yes |
 | Trivy killed by the kernel OOM killer | `SIGKILL` we did not send | `SCANNER_KILLED` | yes |
-| A package registry rate-limits Trivy (e.g. Maven Central HTTP 429 for POM lookups) | `429` / `Too Many Requests` in Trivy's stderr | `UPSTREAM_RATE_LIMITED` | yes, after the registry's `Retry-After` (1–60 min) |
+| A package registry rate-limits Trivy (e.g. Maven Central HTTP 429 for POM lookups) | `429` / `Too Many Requests` in Trivy's stderr | `UPSTREAM_RATE_LIMITED` | yes, after the registry's `Retry-After` (1–60 min); self-test scans fail at once. Prevented by default: Trivy's Maven lookups go through `TRIVY_MAVEN_MIRROR` (Google's Maven Central mirror), not repo.maven.apache.org |
 | Report missing, empty, truncated, not JSON, or a value over 1 MiB | `stat`, tokenizer, extractor end-of-document check | `REPORT_INVALID` | no |
 | Not enough free disk before starting | `statfs` pre-flight | `INSUFFICIENT_DISK` | yes |
 | Disk fills up mid-job | `ENOSPC` / `EDQUOT` / `SQLITE_FULL` / "No space left on device" | `DISK_FULL` | yes |

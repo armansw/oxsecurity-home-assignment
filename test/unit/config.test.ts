@@ -19,6 +19,7 @@ describe('loadConfig', () => {
       TRIVY_GOMEMLIMIT: '48MiB',
       TRIVY_GOGC: 50,
       TRIVY_OFFLINE_SCAN: false,
+      TRIVY_MAVEN_MIRROR: 'https://maven-central.storage-download.googleapis.com/maven2/',
       WORK_DIR: path.join(os.tmpdir(), 'code-guardian'),
     });
     expect(c.trivyCacheDir).toBe(path.join(c.WORK_DIR, '.trivy-cache'));
@@ -35,6 +36,11 @@ describe('loadConfig', () => {
       FIXTURE_CRITICAL_RATIO: '0.5',
     });
     expect(c).toMatchObject({ PORT: 8080, ROLE: 'worker', ALLOWED_GIT_HOSTS: ['github.com', 'gitlab.com'], trivyCacheDir: '/cache', FIXTURE_CRITICAL_RATIO: 0.5 });
+  });
+
+  it('accepts an empty Maven mirror (disabled) and rejects a non-URL', () => {
+    expect(loadConfig({ TRIVY_MAVEN_MIRROR: '' }).TRIVY_MAVEN_MIRROR).toBe('');
+    expect(() => loadConfig({ TRIVY_MAVEN_MIRROR: 'ftp://x' })).toThrow();
   });
 
   it.each([

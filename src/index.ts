@@ -188,6 +188,7 @@ function localTrivy(config: Config): TrivyScanner {
     goMemLimit: config.TRIVY_GOMEMLIMIT,
     goGc: config.TRIVY_GOGC,
     offlineScan: config.TRIVY_OFFLINE_SCAN,
+    mavenMirror: config.TRIVY_MAVEN_MIRROR === '' ? undefined : config.TRIVY_MAVEN_MIRROR,
   });
 }
 

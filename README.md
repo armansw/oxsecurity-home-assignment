@@ -47,7 +47,7 @@ Every error has one shape, `{"error": {"code", "message"}}`. A failed scan carri
 | Delete repo and report | `finally` on every path; the clone is removed before parsing; a janitor handles hard kills |
 | No `fs.readFile` / `JSON.parse` on results | Enforced by an ESLint rule and a CI grep |
 | Runs in 256 MB, `--max-old-space-size=150` | Measured below; CI runs the whole service at 200 MB and at 150 MB |
-| Trivy fails · disk full | Stable error codes, retry with backoff for transient faults, pre-flight disk check, `ENOSPC` detection |
+| Trivy fails · disk full | Stable error codes, retry with backoff for transient faults, pre-flight disk check, `ENOSPC` detection; Java lookups go through a Maven Central mirror, so Maven Central's 429 IP blocks cannot fail a scan |
 | Controller · Service · Worker | `interfaces/` → `application/` → `domain/` ← `infrastructure/`; `worker/` owns the claim loop |
 | Type safety | Strict TypeScript, no `any`; zod at every boundary |
 | Bonus A · React app polling every 2 s | `web/`: REST or GraphQL transport, live memory meter, self-test panel |

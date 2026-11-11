@@ -123,6 +123,21 @@ describe('TrivyScanner', () => {
     expect(text).not.toContain('--offline-scan');
   });
 
+  it('routes Maven lookups through the mirror with a per-scan settings.xml', async () => {
+    const out = path.join(dir, 'trivy-maven');
+    const bin = fakeBinary(
+      dir,
+      'trivy-maven',
+      `echo "HOME=$HOME" > ${out}; cat "$HOME/.m2/settings.xml" >> ${out}; while [ $# -gt 0 ]; do if [ "$1" = --output ]; then echo '{}' > "$2"; fi; shift; done`,
+    );
+    const tmp = fs.mkdtempSync(path.join(dir, 'scan-'));
+    await scanner(bin, { mavenMirror: 'https://mirror.example/maven2/?a=1&b=<2>' }).scan({ sourceDir: '/s', reportPath: path.join(dir, 'm.json'), tmpDir: tmp, signal: signal() });
+    let text = '';
+    for await (const chunk of fs.createReadStream(out, 'utf8')) text += String(chunk);
+    expect(text).toContain(`HOME=${path.join(tmp, 'home')}`);
+    expect(text).toContain('<mirrorOf>*</mirrorOf><url>https://mirror.example/maven2/?a=1&amp;b=&lt;2&gt;</url>');
+  });
+
   it('rejects a successful run that produced no or an empty report', async () => {
     const none = fakeBinary(dir, 'trivy-none', 'exit 0');
     await expect(scanner(none).scan({ sourceDir: '/s', reportPath: path.join(dir, 'missing.json'), tmpDir: dir, signal: signal() })).rejects.toMatchObject({

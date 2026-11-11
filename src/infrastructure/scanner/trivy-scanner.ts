@@ -1,4 +1,5 @@
-import { stat } from 'node:fs/promises';
+import { mkdir, stat, writeFile } from 'node:fs/promises';
+import path from 'node:path';
 import { ScanError } from '../../domain/errors.js';
 import type { Scanner } from '../../domain/ports.js';
 import { CommandError, baseChildEnv, isNoSpaceMessage, runCommand } from '../process/run-command.js';
@@ -19,6 +20,17 @@ export interface TrivyScannerOptions {
    * upstream rate limits, at the cost of not resolving versions inherited from remote POMs.
    */
   readonly offlineScan?: boolean;
+  /**
+   * Maven repository used in place of every remote repository, through a per-scan settings.xml mirror
+   * (`mirrorOf=*`). Pointing it at a mirror of Maven Central avoids repo.maven.apache.org's 429 IP blocks.
+   */
+  readonly mavenMirror?: string | undefined;
+}
+
+/** A Maven settings.xml that routes every repository through one mirror (Trivy honours `<mirrors>`). */
+export function mavenSettingsXml(mirrorUrl: string): string {
+  const url = mirrorUrl.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return `<settings><mirrors><mirror><id>code-guardian</id><mirrorOf>*</mirrorOf><url>${url}</url></mirror></mirrors></settings>\n`;
 }
 
 /**
@@ -51,6 +63,15 @@ export class TrivyScanner implements Scanner {
     }
     args.push(sourceDir);
 
+    // Trivy reads Maven mirrors from $HOME/.m2/settings.xml; a per-scan HOME inside the workspace keeps it isolated
+    // and is deleted with the workspace.
+    let home: string | undefined;
+    if (this.opts.mavenMirror !== undefined) {
+      home = path.join(tmpDir, 'home');
+      await mkdir(path.join(home, '.m2'), { recursive: true });
+      await writeFile(path.join(home, '.m2', 'settings.xml'), mavenSettingsXml(this.opts.mavenMirror));
+    }
+
     try {
       await runCommand(this.opts.trivyBin, {
         args,
@@ -59,7 +80,7 @@ export class TrivyScanner implements Scanner {
         signal,
         // Under memory pressure the kernel kills Trivy, never the service (classified as SCANNER_KILLED).
         oomScoreAdj: 1000,
-        env: baseChildEnv({ GOMEMLIMIT: this.opts.goMemLimit, GOGC: String(this.opts.goGc ?? 50), TMPDIR: tmpDir }),
+        env: baseChildEnv({ GOMEMLIMIT: this.opts.goMemLimit, GOGC: String(this.opts.goGc ?? 50), TMPDIR: tmpDir, HOME: home }),
       });
     } catch (err) {
       throw classifyTrivyError(err);

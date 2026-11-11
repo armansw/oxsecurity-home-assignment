@@ -40,6 +40,15 @@ const EnvSchema = z.object({
   TRIVY_GOMEMLIMIT: z.string().regex(/^\d+(B|KiB|MiB|GiB)$/).default('48MiB'),
   /** Trivy `--offline-scan`: no registry lookups (deterministic; no Maven Central rate limits). */
   TRIVY_OFFLINE_SCAN: z.enum(['true', 'false']).default('false').transform((v) => v === 'true'),
+  /**
+   * Maven repository that Trivy uses instead of every remote repository (Maven Central included) when it resolves
+   * parent POMs and BOMs. Default: Google's official Maven Central mirror, which does not rate-limit like
+   * repo.maven.apache.org (429 + a 30-minute IP block after a burst of Java scans). Empty disables it.
+   */
+  TRIVY_MAVEN_MIRROR: z
+    .string()
+    .default('https://maven-central.storage-download.googleapis.com/maven2/')
+    .refine((v) => v === '' || /^https?:\/\/[^\s<>&"']+$/.test(v), 'must be an http(s) URL or empty'),
   /** Go GC target for the Trivy child; below 100 trades CPU for a smaller heap. */
   TRIVY_GOGC: int(50, 1),
   GIT_BIN: z.string().min(1).default('git'),
