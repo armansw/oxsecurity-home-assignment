@@ -96,14 +96,19 @@ export function openDatabase(file: string): Db {
   return db;
 }
 
-function migrate(db: Db): void {
-  const current = Number(db.pragma('user_version', { simple: true }));
-  for (let v = current; v < MIGRATIONS.length; v += 1) {
-    const sql = MIGRATIONS[v];
-    if (sql === undefined) break;
-    db.transaction(() => {
+/**
+ * Apply pending migrations. In split mode the API and the worker open a fresh database at the same moment, so the
+ * version is read inside one IMMEDIATE (write-locked) transaction: the second process waits on busy_timeout, then
+ * finds nothing left to do.
+ */
+export function migrate(db: Db): void {
+  db.transaction(() => {
+    const current = Number(db.pragma('user_version', { simple: true }));
+    for (let v = current; v < MIGRATIONS.length; v += 1) {
+      const sql = MIGRATIONS[v];
+      if (sql === undefined) break;
       db.exec(sql);
-      db.pragma(`user_version = ${v + 1}`);
-    })();
-  }
+      db.pragma(`user_version = ${String(v + 1)}`);
+    }
+  }).immediate();
 }
