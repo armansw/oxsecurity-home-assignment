@@ -1,33 +1,35 @@
 # Architecture
 
+![System overview](architecture.svg)
+
 ## Layers
 
 ```mermaid
+%%{init: {"theme": "neutral", "flowchart": {"nodeSpacing": 24, "rankSpacing": 40}}}%%
 flowchart TB
-  subgraph interfaces["interfaces/ — transport"]
-    REST[REST controller]
-    GQL[GraphQL resolvers]
-    HEALTH[health]
+  subgraph IF["interfaces/ and worker/ · drivers"]
+    direction LR
+    REST["REST controllers"] ~~~ GQL["GraphQL resolvers"] ~~~ OPS["health · metrics · memory"] ~~~ WRK["worker: claim loop · reaper · janitor"]
   end
-  subgraph application["application/ — use cases"]
-    SVC[ScanService]
-    PROC[ScanProcessor]
+  subgraph APP["application/ · use cases"]
+    direction LR
+    SVC["ScanService"] ~~~ TRS["TestRunService"] ~~~ PROC["ScanProcessor"]
   end
-  WORKER["worker/ — claim loop · reaper · janitor"]
-  subgraph domain["domain/ — types · errors · ports"]
-    PORTS{{ScanStore · RepositoryFetcher · Scanner · Workspace · ReportProcessor}}
+  subgraph DOM["domain/ · types, errors, ports (imports nothing)"]
+    direction LR
+    P1["ScanStore · TestRunStore"] ~~~ P2["RepositoryFetcher · Scanner"] ~~~ P3["Workspace · ReportProcessor"]
   end
-  subgraph infrastructure["infrastructure/ — adapters"]
-    SQL[SqliteScanStore]
-    GIT[GitRepositoryFetcher]
-    TRIVY[TrivyScanner / FixtureScanner]
-    REP[StreamReportProcessor]
-    WS[DiskWorkspace]
+  subgraph INFRA["infrastructure/ · adapters"]
+    direction LR
+    DB["SQLite stores"] ~~~ GIT["git fetcher"] ~~~ SCAN["Trivy / remote scanner agent"] ~~~ PARSE["stream report processor"] ~~~ FS["disk workspace"]
   end
-  REST & GQL --> SVC
-  WORKER --> PROC
-  SVC & PROC --> PORTS
-  SQL & GIT & TRIVY & REP & WS -. implement .-> PORTS
+  IF -->|calls| APP
+  APP -->|depends on ports| DOM
+  INFRA -.->|implements| DOM
+  classDef core fill:#eff6ff,stroke:#93c5fd,color:#0f172a
+  classDef plain fill:#f8fafc,stroke:#cbd5e1,color:#0f172a
+  class SVC,TRS,PROC,P1,P2,P3 core
+  class REST,GQL,OPS,WRK,DB,GIT,SCAN,PARSE,FS plain
 ```
 
 Dependencies point inward. `domain/` imports nothing from the other layers. Controllers validate input, call `ScanService` and map the result to a DTO, with no logic of their own. REST and GraphQL share the same service, so they behave identically. `src/index.ts` is the only composition root, using plain constructor injection with no container.

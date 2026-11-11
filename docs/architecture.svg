@@ -1,0 +1,172 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1060 600" width="1060" height="600" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif" role="img" aria-labelledby="t d">
+  <title id="t">Code Guardian architecture</title>
+  <desc id="d">Clients call the HTTP API. Scans are queued in SQLite and claimed by a worker. A separate scanner agent clones the repository and runs Trivy, writing the JSON report to a disk volume. The service stream-parses the report and stores only CRITICAL findings in 500-row batches, within a 150 MB memory limit.</desc>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#475569"/>
+    </marker>
+    <marker id="ab" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#2563eb"/>
+    </marker>
+    <style>
+      .bg { fill: #ffffff; }
+      .box { fill: #f8fafc; stroke: #cbd5e1; stroke-width: 1.2; }
+      .key { fill: #eff6ff; stroke: #93c5fd; stroke-width: 1.2; }
+      .store { fill: #f0fdf4; stroke: #86efac; stroke-width: 1.2; }
+      .ext { fill: #fafaf9; stroke: #d6d3d1; stroke-width: 1.2; }
+      .pill { fill: #ffffff; stroke: #93c5fd; stroke-width: 1; }
+      .zone { fill: none; stroke: #94a3b8; stroke-width: 1.4; stroke-dasharray: 6 5; }
+      .zone-limit { fill: none; stroke: #dc2626; stroke-width: 1.6; stroke-dasharray: 7 5; }
+      .h { font-size: 14px; font-weight: 600; fill: #0f172a; }
+      .s { font-size: 11.5px; fill: #475569; }
+      .m { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11px; fill: #334155; }
+      .zl { font-size: 12px; font-weight: 600; fill: #475569; letter-spacing: 0.02em; }
+      .zr { font-size: 12px; font-weight: 600; fill: #dc2626; letter-spacing: 0.02em; }
+      .e { stroke: #475569; stroke-width: 1.4; fill: none; marker-end: url(#a); }
+      .eb { stroke: #2563eb; stroke-width: 1.8; fill: none; marker-end: url(#ab); }
+      .n { fill: #2563eb; }
+      .nt { font-size: 11px; font-weight: 700; fill: #ffffff; text-anchor: middle; }
+      .el { font-size: 11px; fill: #334155; }
+    </style>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="1060" height="600" rx="12"/>
+
+  <!-- Clients -->
+  <text class="zl" x="24" y="40">CLIENTS</text>
+  <rect class="box" x="24" y="54" width="170" height="132" rx="8"/>
+  <text class="h" x="40" y="80">React UI</text>
+  <text class="s" x="40" y="98">polls every 2 s</text>
+  <text class="h" x="40" y="128">REST · GraphQL</text>
+  <text class="s" x="40" y="146">curl, GraphiQL, any client</text>
+  <text class="s" x="40" y="170">Run self-test (1–100 repos)</text>
+
+  <!-- Service boundary -->
+  <rect class="zone-limit" x="222" y="22" width="476" height="556" rx="12"/>
+  <text class="zr" x="240" y="44">CODE GUARDIAN SERVICE · HARD LIMIT 150 MB (200 MB IN DOCKER)</text>
+
+  <!-- API -->
+  <rect class="key" x="242" y="62" width="200" height="86" rx="8"/>
+  <text class="h" x="258" y="86">HTTP API · Fastify</text>
+  <text class="m" x="258" y="106">POST /api/scan → 202</text>
+  <text class="m" x="258" y="122">GET  /api/scan/:id</text>
+  <text class="m" x="258" y="138">/graphql · /api/test-runs</text>
+
+  <!-- ScanService -->
+  <rect class="box" x="476" y="62" width="202" height="86" rx="8"/>
+  <text class="h" x="492" y="86">ScanService</text>
+  <text class="s" x="492" y="106">validate URL · admission</text>
+  <text class="s" x="492" y="122">(queue cap, free disk)</text>
+  <text class="s" x="492" y="138">keyset paging of results</text>
+
+  <!-- SQLite -->
+  <rect class="store" x="476" y="196" width="202" height="104" rx="8"/>
+  <text class="h" x="492" y="220">SQLite (WAL)</text>
+  <text class="s" x="492" y="240">scans = durable job queue</text>
+  <text class="s" x="492" y="256">leases + fencing, retries</text>
+  <text class="s" x="492" y="272">CRITICAL findings only</text>
+  <text class="s" x="492" y="288">self-test runs</text>
+
+  <!-- Worker -->
+  <rect class="box" x="242" y="196" width="200" height="104" rx="8"/>
+  <text class="h" x="258" y="220">Worker</text>
+  <text class="s" x="258" y="240">claim loop (atomic)</text>
+  <text class="s" x="258" y="256">heartbeat every 5 s</text>
+  <text class="s" x="258" y="272">reaper: stale leases</text>
+  <text class="s" x="258" y="288">janitor: orphans, TTL</text>
+
+  <!-- ScanProcessor -->
+  <rect class="box" x="242" y="346" width="200" height="72" rx="8"/>
+  <text class="h" x="258" y="370">ScanProcessor</text>
+  <text class="s" x="258" y="390">clone → scan → parse</text>
+  <text class="s" x="258" y="406">always deletes workspace</text>
+
+  <!-- Stream parser -->
+  <rect class="key" x="242" y="456" width="436" height="104" rx="8"/>
+  <text class="h" x="258" y="480">Stream parser · one vulnerability in memory at a time</text>
+  <rect class="pill" x="258" y="494" width="88" height="46" rx="6"/>
+  <text class="m" x="302" y="514" text-anchor="middle">read</text>
+  <text class="m" x="302" y="530" text-anchor="middle">stream</text>
+  <rect class="pill" x="362" y="494" width="96" height="46" rx="6"/>
+  <text class="m" x="410" y="514" text-anchor="middle">stream-json</text>
+  <text class="m" x="410" y="530" text-anchor="middle">tokenizer</text>
+  <rect class="pill" x="474" y="494" width="88" height="46" rx="6"/>
+  <text class="m" x="518" y="514" text-anchor="middle">CRITICAL</text>
+  <text class="m" x="518" y="530" text-anchor="middle">extractor</text>
+  <rect class="pill" x="578" y="494" width="86" height="46" rx="6"/>
+  <text class="m" x="621" y="514" text-anchor="middle">500-row</text>
+  <text class="m" x="621" y="530" text-anchor="middle">batches</text>
+  <path class="e" d="M346 517 H360"/>
+  <path class="e" d="M458 517 H472"/>
+  <path class="e" d="M562 517 H576"/>
+
+  <!-- Scanner zone -->
+  <rect class="zone" x="730" y="22" width="286" height="300" rx="12"/>
+  <text class="zl" x="748" y="44">SCANNER AGENT · OWN MEMORY BUDGET</text>
+  <rect class="ext" x="750" y="62" width="246" height="72" rx="8"/>
+  <text class="h" x="766" y="86">git</text>
+  <text class="m" x="766" y="106">clone --depth 1</text>
+  <text class="s" x="766" y="122">.git removed after clone</text>
+  <rect class="ext" x="750" y="150" width="246" height="72" rx="8"/>
+  <text class="h" x="766" y="174">Trivy client</text>
+  <text class="m" x="766" y="194">trivy fs --format json</text>
+  <text class="s" x="766" y="210">no shell · minimal env</text>
+  <rect class="ext" x="750" y="238" width="246" height="66" rx="8"/>
+  <text class="h" x="766" y="262">Trivy server</text>
+  <text class="s" x="766" y="282">vulnerability DB, outside both</text>
+  <text class="s" x="766" y="296">memory limits</text>
+  <path class="e" d="M873 222 V236"/>
+
+  <!-- Work volume -->
+  <rect class="store" x="750" y="370" width="246" height="104" rx="8"/>
+  <text class="h" x="766" y="394">Work volume (disk)</text>
+  <text class="m" x="766" y="414">&lt;scanId&gt;/repo/</text>
+  <text class="m" x="766" y="430">&lt;scanId&gt;/report.json</text>
+  <text class="s" x="766" y="450">500 MB+ reports live here,</text>
+  <text class="s" x="766" y="466">never in RAM; deleted after</text>
+
+  <!-- Edges -->
+  <!-- 1 client -> API -->
+  <path class="eb" d="M194 100 H240"/>
+  <circle class="n" cx="216" cy="88" r="9"/><text class="nt" x="216" y="92">1</text>
+  <!-- API -> service -->
+  <path class="e" d="M442 105 H474"/>
+  <!-- 2 service -> sqlite -->
+  <path class="eb" d="M577 148 V194"/>
+  <circle class="n" cx="593" cy="170" r="9"/><text class="nt" x="593" y="174">2</text>
+  <text class="el" x="607" y="174">Queued</text>
+  <!-- 3 worker <-> sqlite -->
+  <path class="eb" d="M444 248 H474" marker-start="url(#ab)"/>
+  <circle class="n" cx="459" cy="234" r="9"/><text class="nt" x="459" y="238">3</text>
+  <!-- worker -> processor -->
+  <path class="e" d="M342 300 V344"/>
+  <!-- 4 processor -> scanner agent -->
+  <path class="eb" d="M442 370 H712 V100 H748"/>
+  <circle class="n" cx="712" cy="250" r="9"/><text class="nt" x="712" y="254">4</text>
+  <text class="el" x="456" y="364">clone + scan (HTTP)</text>
+  <!-- 5 scanner -> volume -->
+  <path class="eb" d="M996 186 H1038 V422 H998"/>
+  <circle class="n" cx="1038" cy="346" r="9"/><text class="nt" x="1038" y="350">5</text>
+  <!-- 6 volume -> parser -->
+  <path class="eb" d="M748 452 H712 V508 H680"/>
+  <circle class="n" cx="712" cy="480" r="9"/><text class="nt" x="712" y="484">6</text>
+  <!-- 7 parser -> sqlite -->
+  <path class="eb" d="M640 456 V302"/>
+  <circle class="n" cx="640" cy="330" r="9"/><text class="nt" x="640" y="334">7</text>
+  <!-- 8 client polling -->
+  <path class="e" d="M240 128 H194" />
+
+  <!-- Legend -->
+  <g transform="translate(24,236)">
+    <text class="zl" x="0" y="0">STEPS</text>
+    <text class="s" x="0" y="22">1  POST /api/scan → 202 Queued</text>
+    <text class="s" x="0" y="40">2  scan stored as Queued</text>
+    <text class="s" x="0" y="58">3  worker claims it (lease)</text>
+    <text class="s" x="0" y="76">4  clone + Trivy, isolated</text>
+    <text class="s" x="0" y="94">5  report written to disk</text>
+    <text class="s" x="0" y="112">6  report stream-parsed</text>
+    <text class="s" x="0" y="130">7  CRITICAL rows batched in</text>
+    <text class="s" x="0" y="148">→  client polls GET until</text>
+    <text class="s" x="0" y="166">    Finished or Failed</text>
+  </g>
+</svg>

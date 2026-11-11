@@ -112,7 +112,7 @@ export function classifyTrivyError(err: unknown): unknown {
         const retryAfterMs = Math.min(Math.max(retryAfterS, 60), 3600) * 1000;
         return new ScanError(
           'UPSTREAM_RATE_LIMITED',
-          `A package registry rate-limited Trivy (HTTP 429); retrying in ${Math.round(retryAfterMs / 60_000)} min: ${trivyReason(err.stderrTail)}`,
+          `A package registry rate-limited Trivy (HTTP 429; it asks to wait ${Math.round(retryAfterMs / 60_000)} min): ${trivyReason(err.stderrTail)}`,
           true,
           { cause: err, retryAfterMs },
         );

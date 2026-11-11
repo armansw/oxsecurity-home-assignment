@@ -166,7 +166,7 @@ describe('TrivyScanner', () => {
   it('honours Retry-After on upstream rate limits, within bounds', () => {
     const withHeader = classifyTrivyError(cmdErr('exit', '2026-11-10T20:08:40Z\tFATAL\tError\tremote Maven repository returned 429 Too Many Requests. Retry-After: 1800.'));
     expect(withHeader).toMatchObject({ code: 'UPSTREAM_RATE_LIMITED', retryAfterMs: 1_800_000 });
-    expect((withHeader as ScanError).message).toContain('retrying in 30 min');
+    expect((withHeader as ScanError).message).toContain('it asks to wait 30 min');
     expect(classifyTrivyError(cmdErr('exit', 'HTTP 429 Too Many Requests'))).toMatchObject({ retryAfterMs: 600_000 });
     expect(classifyTrivyError(cmdErr('exit', '429 Too Many Requests. Retry-After: 5'))).toMatchObject({ retryAfterMs: 60_000 });
     expect(classifyTrivyError(cmdErr('exit', '429 Too Many Requests. Retry-After: 99999'))).toMatchObject({ retryAfterMs: 3_600_000 });
