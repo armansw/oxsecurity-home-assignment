@@ -11,7 +11,7 @@ const ID = '11111111-1111-4111-8111-111111111111';
 function item(overrides: Partial<TestRunItem> = {}): TestRunItem {
   return {
     position: 0,
-    repoUrl: 'https://github.com/gin-gonic/gin',
+    repoUrl: 'https://github.com/gin-gonic/gin.git',
     language: 'Go',
     sizeMb: 12,
     scanId: '22222222-2222-4222-8222-222222222222',
@@ -189,7 +189,7 @@ describe('TestRunPanel', () => {
       '✓ · 1 of 2 repositories scanned · every scan within the 150 MB limit · limit never reached · 0 OOM kills',
     );
     expect(screen.getByText('52 MB / 150 MB')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'gin-gonic/gin' })).toHaveAttribute('href', 'https://github.com/gin-gonic/gin');
+    expect(screen.getByRole('link', { name: 'gin-gonic/gin' })).toHaveAttribute('href', 'https://github.com/gin-gonic/gin.git');
     expect(screen.getByText('REPO_NOT_FOUND')).toBeInTheDocument();
     expect(screen.getByText('1m 1s')).toBeInTheDocument();
     expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '2');

@@ -168,7 +168,7 @@ function Stat({ label, value }: { readonly label: string; readonly value: string
 }
 
 function Row({ item, limitMb }: { readonly item: TestRunItem; readonly limitMb: number | null }): ReactElement {
-  const name = item.repoUrl.replace(/^https:\/\/github\.com\//, '');
+  const name = item.repoUrl.replace(/^https:\/\/github\.com\//, '').replace(/\.git$/, '');
   return (
     <tr>
       <td className="break">
