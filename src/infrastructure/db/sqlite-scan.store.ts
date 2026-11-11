@@ -14,7 +14,7 @@ import {
 import type { CriticalVulnerability, StoredVulnerability } from '../../domain/vulnerability.js';
 import type { Db } from './sqlite.js';
 
-interface ScanRow {
+export interface ScanRow {
   id: string;
   repo_url: string;
   commit_sha: string | null;
@@ -71,15 +71,17 @@ export class SqliteScanStore implements ScanStore {
       activeByRepo: db.prepare<[string], ScanRow>(
         `SELECT * FROM scans WHERE repo_url = ? AND status IN ('Queued','Scanning') ORDER BY created_at LIMIT 1`,
       ),
-      countQueued: db.prepare<[], { n: number }>(`SELECT COUNT(*) AS n FROM scans WHERE status = 'Queued'`),
+      // User scans only: background (self-test) scans neither fill the MAX_QUEUED cap nor show as queue depth.
+      countQueued: db.prepare<[], { n: number }>(`SELECT COUNT(*) AS n FROM scans WHERE status = 'Queued' AND background = 0`),
       // Single statement: SQLite serialises writers, so two workers can never claim the same row.
+      // User scans first, then background (self-test) scans; FIFO within each.
       claim: db.prepare<{ workerId: string; now: number }, ScanRow>(
         `UPDATE scans
             SET status = 'Scanning', attempts = attempts + 1, locked_by = @workerId, heartbeat_at = @now,
                 started_at = COALESCE(started_at, @now), phase = 'cloning', progress_pct = NULL, commit_sha = NULL,
                 error_code = NULL, error_message = NULL
           WHERE id = (SELECT id FROM scans WHERE status = 'Queued' AND run_after <= @now
-                      ORDER BY created_at, rowid LIMIT 1)
+                      ORDER BY background, created_at, rowid LIMIT 1)
           RETURNING *`,
       ),
       heartbeat: db.prepare<{ id: string; workerId: string; now: number; phase: string | null; setProgress: number; progress: number | null }>(
@@ -144,6 +146,12 @@ export class SqliteScanStore implements ScanStore {
           LIMIT @limit`,
       ),
       purge: db.prepare<[number]>(`DELETE FROM scans WHERE status IN ('Finished','Failed') AND finished_at < ?`),
+      // A self-test run goes once every scan it started has been purged.
+      purgeRuns: db.prepare<[number]>(
+        `DELETE FROM test_runs
+          WHERE created_at < ?
+            AND NOT EXISTS (SELECT 1 FROM test_run_scans l JOIN scans s ON s.id = l.scan_id WHERE l.run_id = test_runs.id)`,
+      ),
     };
   }
 
@@ -258,7 +266,11 @@ export class SqliteScanStore implements ScanStore {
   }
 
   purgeFinishedBefore(cutoff: number): number {
-    return this.stmt.purge.run(cutoff).changes;
+    return this.db.transaction(() => {
+      const purged = this.stmt.purge.run(cutoff).changes;
+      this.stmt.purgeRuns.run(cutoff);
+      return purged;
+    })();
   }
 
   close(): void {
@@ -276,7 +288,7 @@ export class SqliteScanStore implements ScanStore {
   }
 }
 
-function toScan(row: ScanRow): Scan {
+export function toScan(row: ScanRow): Scan {
   return {
     id: row.id as ScanId,
     repoUrl: row.repo_url,

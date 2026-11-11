@@ -31,7 +31,8 @@ function setup(apis: Partial<Record<Transport, FakeApi>> = {}, loadMemory: (sign
   const rest = apis.rest ?? fakeApi();
   const graphql = apis.graphql ?? fakeApi();
   const createApi = vi.fn((t: Transport) => (t === 'rest' ? rest : graphql));
-  render(<App createApi={createApi} loadMemory={loadMemory} />);
+  const testRunApi = { latest: vi.fn(() => Promise.resolve(null)), get: vi.fn(), start: vi.fn(), cancel: vi.fn() };
+  render(<App createApi={createApi} loadMemory={loadMemory} testRunApi={testRunApi} />);
   return { rest, graphql, createApi };
 }
 

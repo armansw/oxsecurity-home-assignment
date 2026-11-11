@@ -3,6 +3,7 @@
  * `src/index.ts` wires them together. Nothing here performs I/O or imports a framework.
  */
 import type { ScanFailure, Scan, ScanId, ScanPhase, ScanStats } from './scan.js';
+import type { MemoryCounters, TestRun, TestRunEntry, TestRunId } from './test-run.js';
 import type { CriticalVulnerability, StoredVulnerability } from './vulnerability.js';
 
 export interface LogFn {
@@ -57,6 +58,18 @@ export interface ScanStore {
   /** Delete terminal scans (and, by cascade, their vulnerabilities) finished before `cutoff`. */
   purgeFinishedBefore(cutoff: number): number;
   close(): void;
+}
+
+/** Self-test runs. Their scans live in the same queue as user scans, flagged as background. */
+export interface TestRunStore {
+  /** Atomically create the run and one Queued background scan per entry. */
+  create(input: { readonly entries: readonly TestRunEntry[]; readonly baseline: MemoryCounters | null }): TestRun;
+  findById(id: TestRunId): TestRun | undefined;
+  findLatest(): TestRun | undefined;
+  /** The run that still has Queued or Scanning scans and was not cancelled, if any. */
+  findActive(): TestRun | undefined;
+  /** Fail the run's still-Queued scans as CANCELLED (a scan already running finishes). Returns how many. */
+  cancel(id: TestRunId): number;
 }
 
 export interface RepositoryFetcher {

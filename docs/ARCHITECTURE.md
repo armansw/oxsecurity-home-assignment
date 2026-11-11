@@ -144,7 +144,7 @@ Retries use exponential backoff (5 s, 20 s, 80 s, ±20 % jitter) with at most 3 
 | Secret leakage to children | minimal child environment |
 | Hostile report (huge strings, deep nesting) | tokenizer `maxPackedLength` 1 MiB, `maxDepth` 64; descriptions truncated to 4 KiB |
 | Leaking internals in errors | client-safe messages; 500s are generic |
-| Abuse | rate limit on `POST /api/scan`, queue cap → 429, body limit 4 KiB, GraphQL depth limit, page size ≤ 1000 |
+| Abuse | rate limit on `POST /api/scan` and `POST /api/test-runs`, queue cap → 429, one self-test at a time (409), self-test scans always yield to user scans, body limit 4 KiB, GraphQL depth limit, page size ≤ 1000 |
 | Container breakout surface | non-root user, `cap_drop: ALL`, `no-new-privileges`, `pids_limit` |
 
 Scanning untrusted repositories is still hostile-input processing. In production, workers belong in a sandbox (gVisor or Firecracker) with egress restricted to GitHub and the Trivy server.

@@ -3,13 +3,16 @@ import { createScanApi } from './api';
 import { toApiError } from './api/errors';
 import { isTerminal, type ScanApi, type Transport } from './api/types';
 import { fetchSystemMemory, type SystemMemory } from './api/system';
+import { createTestRunApi, type TestRunApi } from './api/testRuns';
 import { MemoryPanel } from './components/MemoryPanel';
 import { ScanForm } from './components/ScanForm';
 import { ScanResults } from './components/ScanResults';
 import { StatusBadge } from './components/StatusBadge';
+import { TestRunPanel } from './components/TestRunPanel';
 import { TransportToggle } from './components/TransportToggle';
 import { useScanPolling } from './hooks/useScanPolling';
 import { useSystemMemory } from './hooks/useSystemMemory';
+import { useTestRun } from './hooks/useTestRun';
 import { readScanIdFromUrl, writeScanIdToUrl } from './url';
 
 interface AppProps {
@@ -17,9 +20,13 @@ interface AppProps {
   readonly createApi?: (transport: Transport) => ScanApi;
   /** Injection point for tests; production polls GET /api/system/memory. */
   readonly loadMemory?: (signal: AbortSignal) => Promise<SystemMemory>;
+  /** Injection point for tests; production calls /api/test-runs. */
+  readonly testRunApi?: TestRunApi;
 }
 
-export function App({ createApi = createScanApi, loadMemory = fetchSystemMemory }: AppProps): ReactElement {
+const defaultTestRunApi = createTestRunApi();
+
+export function App({ createApi = createScanApi, loadMemory = fetchSystemMemory, testRunApi = defaultTestRunApi }: AppProps): ReactElement {
   const [transport, setTransport] = useState<Transport>('rest');
   const api = useMemo(() => createApi(transport), [createApi, transport]);
 
@@ -30,6 +37,7 @@ export function App({ createApi = createScanApi, loadMemory = fetchSystemMemory 
   const { scan, error, reconnecting } = useScanPolling(api, scanId);
   const memory = useSystemMemory(loadMemory);
   const memoryLimitMb = memory?.cgroup?.limitMb ?? null;
+  const selfTest = useTestRun(testRunApi);
 
   const selectScan = (id: string | null): void => {
     setScanId(id);
@@ -103,6 +111,8 @@ export function App({ createApi = createScanApi, loadMemory = fetchSystemMemory 
       )}
 
       {scan?.status === 'Finished' && <ScanResults key={scan.scanId} api={api} scan={scan} memoryLimitMb={memoryLimitMb} />}
+
+      <TestRunPanel controls={selfTest} />
     </main>
   );
 }

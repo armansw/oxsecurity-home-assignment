@@ -4,6 +4,7 @@ import { RequestError } from '../../domain/errors.js';
 import type { Scan } from '../../domain/scan.js';
 import type { StoredVulnerability } from '../../domain/vulnerability.js';
 import { toVulnerabilityDto, type VulnerabilityDto } from '../rest/scan.dto.js';
+import { REQUEST_ERROR_STATUS } from '../http/error-handler.js';
 
 interface ScanArgs {
   readonly id: string;
@@ -18,19 +19,11 @@ interface VulnerabilityArgs {
 
 type VulnerabilityNode = VulnerabilityDto & { readonly cursor: string };
 
-const STATUS_BY_CODE: Record<RequestError['code'], number> = {
-  INVALID_REPO_URL: 400,
-  INVALID_SCAN_ID: 400,
-  INVALID_CURSOR: 400,
-  NOT_FOUND: 404,
-  QUEUE_FULL: 429,
-  NOT_READY: 503,
-};
 
 /** Map domain request errors to GraphQL errors with a stable `extensions.code`. */
 function graphqlError(err: unknown): unknown {
   if (err instanceof RequestError) {
-    return new mercurius.ErrorWithProps(err.message, { code: err.code }, STATUS_BY_CODE[err.code]);
+    return new mercurius.ErrorWithProps(err.message, { code: err.code }, REQUEST_ERROR_STATUS[err.code]);
   }
   return err;
 }

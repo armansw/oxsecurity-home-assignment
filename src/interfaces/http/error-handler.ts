@@ -6,13 +6,16 @@ export interface ErrorBody {
   readonly error: { readonly code: string; readonly message: string; readonly details?: readonly string[] };
 }
 
-const STATUS_BY_CODE: Record<RequestErrorCode, number> = {
+/** HTTP status per request error code, shared by REST and GraphQL (`extensions.status`). */
+export const REQUEST_ERROR_STATUS: Record<RequestErrorCode, number> = {
   INVALID_REPO_URL: 400,
   INVALID_SCAN_ID: 400,
   INVALID_CURSOR: 400,
   NOT_FOUND: 404,
   QUEUE_FULL: 429,
   NOT_READY: 503,
+  TEST_RUN_ACTIVE: 409,
+  INVALID_TEST_RUN: 400,
 };
 
 /**
@@ -22,7 +25,7 @@ const STATUS_BY_CODE: Record<RequestErrorCode, number> = {
 export function registerErrorHandling(app: FastifyInstance): void {
   app.setErrorHandler<FastifyError | Error>((err, request, reply) => {
     if (err instanceof RequestError) {
-      const status = STATUS_BY_CODE[err.code];
+      const status = REQUEST_ERROR_STATUS[err.code];
       if (err.code === 'QUEUE_FULL') void reply.header('retry-after', '30');
       return reply.code(status).send(body(err.code, err.message));
     }

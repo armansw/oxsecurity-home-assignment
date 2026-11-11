@@ -10,6 +10,8 @@ import type { FastifyBaseLogger } from 'fastify';
 import { pino } from 'pino';
 import { ScanProcessor } from './application/scan.processor.js';
 import { ScanService } from './application/scan.service.js';
+import { TEST_CORPUS } from './application/test-corpus.js';
+import { TestRunService } from './application/test-run.service.js';
 import { loadConfig } from './config/env.js';
 import type { RepositoryFetcher, Scanner } from './domain/ports.js';
 import { RemoteScanAgent } from './infrastructure/scanner/remote-scan-agent.js';
@@ -17,6 +19,7 @@ import { buildScannerAgentApp } from './interfaces/http/scanner-agent.js';
 import type { Config } from './config/env.js';
 import { openDatabase } from './infrastructure/db/sqlite.js';
 import { SqliteScanStore } from './infrastructure/db/sqlite-scan.store.js';
+import { SqliteTestRunStore } from './infrastructure/db/sqlite-test-run.store.js';
 import { DiskWorkspace } from './infrastructure/fs/disk-workspace.js';
 import { GitRepositoryFetcher } from './infrastructure/git/git-repository-fetcher.js';
 import { StreamReportProcessor } from './infrastructure/report/stream-report-processor.js';
@@ -24,6 +27,7 @@ import { FixtureScanner } from './infrastructure/scanner/fixture-scanner.js';
 import { TrivyScanner } from './infrastructure/scanner/trivy-scanner.js';
 import { buildApp, buildOpsApp } from './interfaces/http/app.js';
 import { PrometheusMetrics } from './infrastructure/metrics/prometheus-metrics.js';
+import { readMemoryCounters } from './infrastructure/process/system-memory.js';
 import type { ReadinessCheck } from './interfaces/http/health.controller.js';
 import { Worker } from './worker/worker.js';
 
@@ -36,7 +40,8 @@ async function main(): Promise<void> {
     await runScannerAgent(config, log);
     return;
   }
-  const store = new SqliteScanStore(openDatabase(config.DATABASE_PATH));
+  const db = openDatabase(config.DATABASE_PATH);
+  const store = new SqliteScanStore(db);
   const workspace = new DiskWorkspace(config.WORK_DIR, config.MIN_FREE_DISK_MB * 1024 * 1024, log);
 
   const remote =
@@ -96,6 +101,17 @@ async function main(): Promise<void> {
     ...(worker ? { wake: () => { worker.wake(); }, checkCapacity: () => workspace.assertFreeSpace() } : {}),
   });
 
+  const testRuns = config.TEST_RUNS_ENABLED
+    ? new TestRunService(new SqliteTestRunStore(db), {
+        corpus: TEST_CORPUS,
+        allowedHosts: config.ALLOWED_GIT_HOSTS,
+        maxSize: config.TEST_RUN_MAX_SIZE,
+        maxRepoMb: config.TEST_RUN_MAX_REPO_MB,
+        readCounters: () => readMemoryCounters(),
+        ...(worker ? { wake: () => { worker.wake(); }, checkCapacity: () => workspace.assertFreeSpace() } : {}),
+      })
+    : undefined;
+
   // Probes can be frequent; never spawn `trivy --version` more than once per 30 s.
   let scannerCheck: { at: number; result: ReadinessCheck } | undefined;
   const checkScanner = async (): Promise<ReadinessCheck> => {
@@ -125,6 +141,7 @@ async function main(): Promise<void> {
     ? await buildApp({
         service,
         store,
+        testRuns,
         readiness,
         metrics,
         trustProxy: config.TRUST_PROXY,

@@ -16,6 +16,7 @@ export const SCAN_ERROR_CODES = [
   'INSUFFICIENT_DISK',
   'DISK_FULL',
   'WORKER_CRASHED',
+  'CANCELLED',
   'INTERNAL',
 ] as const;
 export type ScanErrorCode = (typeof SCAN_ERROR_CODES)[number];
@@ -62,7 +63,7 @@ export class ShutdownError extends Error {
 }
 
 /** Request-level errors raised by the application service and mapped to HTTP/GraphQL by the interfaces. */
-export type RequestErrorCode = 'INVALID_REPO_URL' | 'INVALID_SCAN_ID' | 'INVALID_CURSOR' | 'NOT_FOUND' | 'QUEUE_FULL' | 'NOT_READY';
+export type RequestErrorCode = 'INVALID_REPO_URL' | 'INVALID_SCAN_ID' | 'INVALID_CURSOR' | 'NOT_FOUND' | 'QUEUE_FULL' | 'NOT_READY' | 'TEST_RUN_ACTIVE' | 'INVALID_TEST_RUN';
 
 export class RequestError extends Error {
   override readonly name = 'RequestError';

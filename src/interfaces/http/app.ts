@@ -2,10 +2,12 @@ import rateLimit from '@fastify/rate-limit';
 import Fastify, { type FastifyBaseLogger, type FastifyInstance, type FastifyRequest } from 'fastify';
 import mercurius from 'mercurius';
 import type { ScanService } from '../../application/scan.service.js';
+import type { TestRunService } from '../../application/test-run.service.js';
 import type { ScanStore } from '../../domain/ports.js';
 import { buildResolvers } from '../graphql/resolvers.js';
 import { schema } from '../graphql/schema.js';
 import { registerScanRoutes } from '../rest/scan.controller.js';
+import { registerTestRunRoutes } from '../rest/test-run.controller.js';
 import { registerErrorHandling } from './error-handler.js';
 import { registerHealthRoutes, type ReadinessProbe } from './health.controller.js';
 
@@ -26,6 +28,8 @@ interface CommonDeps {
 export interface AppDeps extends CommonDeps {
   readonly service: ScanService;
   readonly store: ScanStore;
+  /** In-app self-test; omitted when TEST_RUNS_ENABLED=false. */
+  readonly testRuns?: TestRunService | undefined;
   readonly responsePageSize: number;
   /** Scan-creation limit per client IP, applied to POST /api/scan and to the GraphQL startScan mutation (each). */
   readonly rateLimitPerMinute: number;
@@ -66,6 +70,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     responsePageSize: deps.responsePageSize,
     rateLimit: scanCreationLimit,
   });
+  if (deps.testRuns !== undefined) registerTestRunRoutes(app, { testRuns: deps.testRuns, rateLimit: scanCreationLimit });
 
   await app.register(mercurius, {
     schema,

@@ -1,5 +1,6 @@
 import { open } from 'node:fs/promises';
 import v8 from 'node:v8';
+import type { MemoryCounters } from '../../domain/test-run.js';
 import { privateMemoryBytes } from './private-memory.js';
 
 export interface CgroupMemory {
@@ -36,21 +37,43 @@ export async function readSystemMemory(cgroupRoot = '/sys/fs/cgroup'): Promise<S
 }
 
 async function readCgroup(root: string): Promise<CgroupMemory | null> {
-  if (process.platform !== 'linux') return null;
-  // cgroup v2: "0::/system.slice/code-guardian.service" (systemd) or "0::/" (a container's own namespace).
-  const self = await readSmallTextFile('/proc/self/cgroup');
-  const rel = self === null ? null : /^0::(\/.*)$/m.exec(self)?.[1];
-  if (rel === undefined || rel === null) return null;
-  const dir = `${root}${rel === '/' ? '' : rel}`;
+  const dir = await cgroupDir(root);
+  if (dir === null) return null;
   const current = await readSmallTextFile(`${dir}/memory.current`);
   if (current === null) return null;
-  const max = (await readSmallTextFile(`${dir}/memory.max`))?.trim();
   const peak = await readSmallTextFile(`${dir}/memory.peak`);
   return {
-    limitMb: max === undefined || max === 'max' ? null : mb(Number(max)),
+    limitMb: await readLimitMb(dir),
     currentMb: mb(Number(current)),
     peakMb: peak === null ? null : mb(Number(peak)),
   };
+}
+
+/**
+ * The cgroup's lifetime memory events (limit reached, OOM kills) and its limit, or null without cgroup v2.
+ * The self-test records them when a run starts and reports the difference.
+ */
+export async function readMemoryCounters(cgroupRoot = '/sys/fs/cgroup'): Promise<MemoryCounters | null> {
+  const dir = await cgroupDir(cgroupRoot);
+  if (dir === null) return null;
+  const events = await readSmallTextFile(`${dir}/memory.events`);
+  if (events === null) return null;
+  const counter = (name: string): number => Number(new RegExp(`^${name} (\\d+)$`, 'm').exec(events)?.[1] ?? 0);
+  return { limitMb: await readLimitMb(dir), limitHits: counter('max'), oomKills: counter('oom_kill') };
+}
+
+async function cgroupDir(root: string): Promise<string | null> {
+  if (process.platform !== 'linux') return null;
+  // cgroup v2: "0::/system.slice/code-guardian.service" (systemd) or "0::/" (a container's own namespace).
+  const self = await readSmallTextFile('/proc/self/cgroup');
+  const rel = self === null ? undefined : /^0::(\/.*)$/m.exec(self)?.[1];
+  if (rel === undefined) return null;
+  return `${root}${rel === '/' ? '' : rel}`;
+}
+
+async function readLimitMb(dir: string): Promise<number | null> {
+  const max = (await readSmallTextFile(`${dir}/memory.max`))?.trim();
+  return max === undefined || max === 'max' ? null : mb(Number(max));
 }
 
 /** Reads a tiny kernel file through a file handle (no readFile). Returns null when it does not exist. */

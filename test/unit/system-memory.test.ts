@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { readSmallTextFile, readSystemMemory } from '../../src/infrastructure/process/system-memory.js';
+import { readMemoryCounters, readSmallTextFile, readSystemMemory } from '../../src/infrastructure/process/system-memory.js';
 import { tempDir } from '../helpers/index.js';
 
 const MiB = 1024 * 1024;
@@ -39,6 +39,18 @@ describe('readSystemMemory', () => {
   it.runIf(linux)('treats "max" as unlimited and tolerates kernels without memory.peak', async () => {
     const r = await fakeCgroup({ 'memory.max': 'max\n', 'memory.current': `${10 * MiB}\n` });
     expect((await readSystemMemory(r)).cgroup).toEqual({ limitMb: null, currentMb: 10, peakMb: null });
+  });
+
+  it.runIf(linux)('reads memory.events counters and the limit', async () => {
+    const r = await fakeCgroup({
+      'memory.max': `${150 * MiB}\n`,
+      'memory.events': 'low 0\nhigh 0\nmax 3\noom 1\noom_kill 1\noom_group_kill 0\n',
+    });
+    expect(await readMemoryCounters(r)).toEqual({ limitMb: 150, limitHits: 3, oomKills: 1 });
+  });
+
+  it('returns null counters without a cgroup', async () => {
+    expect(await readMemoryCounters('/nonexistent')).toBeNull();
   });
 
   it('returns null for missing files', async () => {

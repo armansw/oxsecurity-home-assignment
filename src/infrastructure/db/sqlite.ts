@@ -50,6 +50,34 @@ const MIGRATIONS: readonly string[] = [
   CREATE INDEX idx_vulns_scan ON vulnerabilities (scan_id, row_id);
   `,
   `ALTER TABLE scans ADD COLUMN commit_sha TEXT;`,
+  // v3: the in-app self-test. Its scans are `background` so a user's own scan is always claimed first and the
+  // MAX_QUEUED cap keeps meaning "user scans waiting".
+  `
+  ALTER TABLE scans ADD COLUMN background INTEGER NOT NULL DEFAULT 0;
+  DROP INDEX idx_scans_claim;
+  CREATE INDEX idx_scans_claim ON scans (status, background, run_after, created_at);
+
+  CREATE TABLE test_runs (
+    id                TEXT PRIMARY KEY,
+    created_at        INTEGER NOT NULL,
+    cancelled_at      INTEGER,
+    limit_mb          INTEGER,
+    limit_hits_before INTEGER,
+    oom_kills_before  INTEGER
+  );
+  CREATE INDEX idx_test_runs_created ON test_runs (created_at);
+
+  CREATE TABLE test_run_scans (
+    run_id   TEXT    NOT NULL REFERENCES test_runs(id) ON DELETE CASCADE,
+    position INTEGER NOT NULL,
+    scan_id  TEXT    NOT NULL,
+    repo_url TEXT    NOT NULL,
+    language TEXT    NOT NULL,
+    size_mb  INTEGER NOT NULL,
+    PRIMARY KEY (run_id, position)
+  );
+  CREATE INDEX idx_test_run_scans_scan ON test_run_scans (scan_id);
+  `,
 ];
 
 /**
