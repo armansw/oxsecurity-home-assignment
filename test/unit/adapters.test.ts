@@ -38,7 +38,7 @@ describe('GitRepositoryFetcher', () => {
     let text = '';
     for await (const chunk of fs.createReadStream(argsFile, 'utf8')) text += String(chunk);
     expect(text.trim().split('\n')).toEqual([
-      '-c', 'protocol.file.allow=never', '-c', 'credential.helper=', '-c', 'pack.threads=1', '-c', 'core.deltaBaseCacheLimit=8m',
+      '-c', 'protocol.file.allow=never', '-c', 'credential.helper=', '-c', 'pack.threads=1', '-c', 'core.longpaths=true', '-c', 'core.deltaBaseCacheLimit=8m',
       '-c', 'core.packedGitLimit=32m', '-c', 'core.packedGitWindowSize=1m', 'clone', '--depth', '1', '--single-branch',
       '--no-tags', '--no-recurse-submodules', '--', 'https://github.com/a/b.git', dest,
     ]);

@@ -64,4 +64,16 @@ export default tseslint.config(
       '@typescript-eslint/explicit-module-boundary-types': 'off',
     },
   },
+  {
+    // The cross-platform runner (scripts/cg.mjs) is plain JavaScript that runs before `npm ci`: no type information,
+    // but the same ban on readFile / JSON.parse.
+    files: ['scripts/**/*.mjs'],
+    ...tseslint.configs.disableTypeChecked,
+    languageOptions: {
+      sourceType: 'module',
+      parserOptions: { projectService: false, program: null },
+      globals: { process: 'readonly', console: 'readonly', fetch: 'readonly', setTimeout: 'readonly', URL: 'readonly' },
+    },
+    rules: { ...tseslint.configs.disableTypeChecked.rules, ...forbiddenMemoryApis },
+  },
 );

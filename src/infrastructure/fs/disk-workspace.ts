@@ -70,6 +70,11 @@ export class DiskWorkspace implements Workspace {
         await rm(target, { force: true });
         return;
       }
+      if (process.platform === 'win32') {
+        // No `rm` on Windows. Local development only: the memory-bounded child matters in the Linux container.
+        await rm(target, { recursive: true, force: true, maxRetries: 3 });
+        return;
+      }
       await runCommand('rm', {
         args: ['-rf', '--', target],
         env: baseChildEnv(),

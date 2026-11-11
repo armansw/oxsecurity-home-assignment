@@ -90,21 +90,26 @@ jobs:
           docker compose -f docker-compose.yml ${{ matrix.files }} logs --tail 100
 
   run-sh:
-    name: ./run.sh from scratch (${{ matrix.os }})
+    name: one-command run from scratch (${{ matrix.os }})
     needs: [backend]
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Doctor
+      - name: Doctor (./run.sh)
+        if: runner.os != 'Windows'
         run: ./run.sh doctor
-      - name: Bootstrap Node + Trivy locally, build, run, scan, Ctrl-C
+      - name: Doctor (run.cmd)
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: run.cmd doctor
+      - name: Bootstrap Node + Trivy locally, build, run, scan, stop
         env:
           CG_FORCE_LOCAL_TOOLS: "1"
-        run: ./scripts/smoke-run.sh
+        run: node scripts/smoke-run.mjs
 
   large-repos:
     name: large repositories, verified against Trivy (service at 150m, strict)

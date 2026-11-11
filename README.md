@@ -11,17 +11,24 @@ A Node.js + TypeScript service that wraps the [Trivy](https://trivy.dev) scanner
 
 ## Run it
 
-```bash
-./run.sh      # UI → http://localhost:5173 · API → http://localhost:3000
-```
+One command, the same on every OS:
 
-It needs only `bash`, `git`, `tar` and `curl`. If Node (≥ 22.12) or Trivy is missing, the script downloads it into `.cg-env/` and verifies its checksum, with no root and no global installs. On Windows, use WSL2 or Docker.
-
-| Also | Command |
+| OS | Command |
 |---|---|
-| Docker (`mem_limit: 200m`, Trivy sidecar, UI on :8080) | `docker compose up --build` |
-| The brief's self-test (needs `git` + `trivy`) | `npm ci && npm run build && node --max-old-space-size=150 dist/index.js` |
-| Tests · memory proof · environment check | `./run.sh test` · `./run.sh oom-check` · `./run.sh doctor` |
+| Linux · macOS | `./run.sh` |
+| Windows | `run.cmd` (in PowerShell: `.\run.cmd`) |
+
+The UI opens at http://localhost:5173 and the API at http://localhost:3000. All you need is `git`. If Node (≥ 22.12) or Trivy is missing, it is downloaded into `.cg-env/` and its checksum is verified, with no admin rights and no global installs.
+
+| Subcommand (same everywhere) | Does |
+|---|---|
+| *(none)* | build, start API + worker and UI; Ctrl-C stops everything |
+| `docker` | the same in Docker (`mem_limit: 200m`, Trivy sidecar, UI on :8080) |
+| `test` | lint, typecheck and test backend and frontend |
+| `oom-check` | a 600 MB report under `--max-old-space-size=150` |
+| `doctor` · `clean` | show the tools found · remove everything it installed |
+
+The brief's own self-test also works directly: `npm ci && npm run build && node --max-old-space-size=150 dist/index.js` (needs `git` and `trivy`).
 
 ## API
 
@@ -77,7 +84,7 @@ Six traps still run a streaming parser out of memory. Each is closed in this cod
 281 backend and 98 frontend tests, ~99 % line coverage. CI also runs:
 
 - **Docker:** the service at 200 MB and at 150 MB, and API and worker as separate containers.
-- **Install:** `./run.sh` from scratch on Linux and macOS.
+- **Install:** the one-command run from scratch on Linux, macOS and Windows: download Node and Trivy, build, scan a real repository, stop.
 - **Large repositories:** [`scripts/large_repos_e2e.py`](scripts/large_repos_e2e.py) scans real repositories through the running service, then runs Trivy independently on the same commit, parses that report with Python's `json` and requires an exact match. It also requires no OOM kill and an empty workspace afterwards. It covers 7 repositories (next.js, vscode, kubernetes, …) on every push to `main`, and the full corpus weekly in 8 parallel shards.
 
 ## More

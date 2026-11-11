@@ -22,6 +22,7 @@ export class GitRepositoryFetcher implements RepositoryFetcher {
       '-c', 'credential.helper=',
       // Low-memory clone: one indexing thread and small caches. git shares the container's memory limit.
       '-c', 'pack.threads=1',
+      '-c', 'core.longpaths=true', // Windows: paths over 260 characters (ignored elsewhere)
       '-c', 'core.deltaBaseCacheLimit=8m',
       '-c', 'core.packedGitLimit=32m',
       '-c', 'core.packedGitWindowSize=1m',

@@ -146,9 +146,18 @@ export function runCommand(command: string, opts: RunOptions): Promise<string> {
 }
 
 /** Minimal environment for children: enough to find binaries, nothing secret. */
+const WINDOWS_ENV = ['SystemRoot', 'SystemDrive', 'windir', 'ComSpec', 'PATHEXT', 'TEMP', 'TMP', 'USERPROFILE', 'APPDATA', 'LOCALAPPDATA', 'ProgramData', 'ProgramFiles', 'HOMEDRIVE', 'HOMEPATH'] as const;
+
 export function baseChildEnv(extra: Readonly<Record<string, string | undefined>> = {}): Record<string, string> {
   const env: Record<string, string> = { PATH: process.env.PATH ?? '/usr/local/bin:/usr/bin:/bin' };
   if (process.env.HOME !== undefined) env.HOME = process.env.HOME;
+  // Windows processes (git included) cannot start without these; none of them carries a secret.
+  if (process.platform === 'win32') {
+    for (const k of WINDOWS_ENV) {
+      const v = process.env[k];
+      if (v !== undefined) env[k] = v;
+    }
+  }
   for (const [k, v] of Object.entries(extra)) if (v !== undefined) env[k] = v;
   return env;
 }

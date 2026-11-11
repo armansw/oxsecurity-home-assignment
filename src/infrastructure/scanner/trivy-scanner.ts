@@ -80,7 +80,7 @@ export class TrivyScanner implements Scanner {
         signal,
         // Under memory pressure the kernel kills Trivy, never the service (classified as SCANNER_KILLED).
         oomScoreAdj: 1000,
-        env: baseChildEnv({ GOMEMLIMIT: this.opts.goMemLimit, GOGC: String(this.opts.goGc ?? 50), TMPDIR: tmpDir, HOME: home }),
+        env: baseChildEnv({ GOMEMLIMIT: this.opts.goMemLimit, GOGC: String(this.opts.goGc ?? 50), TMPDIR: tmpDir, HOME: home, ...(process.platform === 'win32' && home !== undefined ? { USERPROFILE: home } : {}) }),
       });
     } catch (err) {
       throw classifyTrivyError(err);
