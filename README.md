@@ -23,12 +23,32 @@ The UI opens at http://localhost:5173 and the API at http://localhost:3000. All 
 | Subcommand (same everywhere) | Does |
 |---|---|
 | *(none)* | build, start API + worker and UI; Ctrl-C stops everything |
-| `docker` | the same in Docker (`mem_limit: 200m`, Trivy sidecar, UI on :8080) |
+| `docker` | the same in Docker ([below](#with-docker-on-any-os)) |
 | `test` | lint, typecheck and test backend and frontend |
 | `oom-check` | a 600 MB report under `--max-old-space-size=150` |
 | `doctor` · `clean` | show the tools found · remove everything it installed |
 
 The brief's own self-test also works directly: `npm ci && npm run build && node --max-old-space-size=150 dist/index.js` (needs `git` and `trivy`).
+
+### With Docker, on any OS
+
+```bash
+docker compose up --build        # UI → http://localhost:8080 · API → http://localhost:3000
+```
+
+This needs only Docker with Compose v2: Docker Engine on Linux, or Docker Desktop on macOS and Windows (Linux containers, the default WSL2 backend). Every image is published for x64 and arm64, so it also runs on Apple Silicon. The service container is held to the brief's `mem_limit: 200m`. Docker runs Trivy as a server sidecar, and git and Trivy run in their own scanner container. CI runs this stack on Linux x64.
+
+### Versions
+
+| Component | Version |
+|---|---|
+| Node.js | ≥ 22.12 required; **24.22.1** pinned (local download, and Docker `node:24-bookworm-slim`); CI tests 22 and 24 |
+| TypeScript | 5.9.3, strict |
+| Trivy | **0.76.1**: local download, and Docker `aquasec/trivy:0.76.1` pinned by digest |
+| Backend | Fastify 5.12.8 · Mercurius 16.12.1 (GraphQL 17.1.0) · better-sqlite3 13.0.3 · stream-json 3.9.0 · zod 4.6.7 · pino 10.4.0 |
+| Web | React 19.3.1 · Vite 8.3.7, served by `nginx:1.27-alpine` in Docker |
+| Tests | Vitest 5.1.0 |
+| Verified on (CI) | Ubuntu, macOS and Windows (one-command run from scratch) · Docker on Linux x64 |
 
 ## API
 
