@@ -3,7 +3,17 @@ import type { TestRun, TestRunItem } from '../api/testRuns';
 import { formatBytes, formatCount, formatDuration } from '../format';
 import type { TestRunControls } from '../hooks/useTestRun';
 
-export const TEST_RUN_SIZES = [10, 20, 30] as const;
+/** Server default for TEST_RUN_MAX_SIZE; a run never exceeds the eligible pool either. */
+export const TEST_RUN_MAX_SIZE = 100;
+export const TEST_RUN_DEFAULT_SIZE = 20;
+/** Observed on the live service: about 25 s per corpus repository, scanned one at a time. */
+const SECONDS_PER_REPO = 25;
+
+function parseSize(text: string, max: number): number | null {
+  if (!/^\d{1,3}$/.test(text)) return null;
+  const n = Number(text);
+  return n >= 1 && n <= max ? n : null;
+}
 
 /**
  * "Run self-test": the live service scans a random sample of the large-repository corpus, one repository at a
@@ -11,7 +21,9 @@ export const TEST_RUN_SIZES = [10, 20, 30] as const;
  */
 export function TestRunPanel({ controls }: { readonly controls: TestRunControls }): ReactElement {
   const { run, error, busy } = controls;
-  const [size, setSize] = useState<number>(TEST_RUN_SIZES[1]);
+  const max = Math.min(TEST_RUN_MAX_SIZE, run?.poolSize ?? TEST_RUN_MAX_SIZE);
+  const [text, setText] = useState(String(TEST_RUN_DEFAULT_SIZE));
+  const size = parseSize(text, max);
   const running = run?.state === 'running';
 
   return (
@@ -32,27 +44,40 @@ export function TestRunPanel({ controls }: { readonly controls: TestRunControls 
             </button>
           ) : (
             <>
-              <label className="selftest__size">
-                <span className="visually-hidden">Repositories to scan</span>
-                <select
-                  value={size}
+              <div className="selftest__size">
+                <input
+                  type="range"
+                  min={1}
+                  max={max}
+                  value={size ?? TEST_RUN_DEFAULT_SIZE}
                   disabled={busy}
+                  aria-label="Repositories to scan (slider)"
                   onChange={(e) => {
-                    setSize(Number(e.target.value));
+                    setText(e.target.value);
                   }}
-                >
-                  {TEST_RUN_SIZES.map((n) => (
-                    <option key={n} value={n}>
-                      {n} repositories
-                    </option>
-                  ))}
-                </select>
-              </label>
+                />
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={1}
+                  max={max}
+                  value={text}
+                  disabled={busy}
+                  aria-label="Repositories to scan"
+                  aria-invalid={size === null}
+                  onChange={(e) => {
+                    setText(e.target.value);
+                  }}
+                />
+                <span className="muted selftest__eta">
+                  {size === null ? `1–${String(max)}` : `≈ ${String(Math.max(1, Math.round((size * SECONDS_PER_REPO) / 60)))} min`}
+                </span>
+              </div>
               <button
                 type="button"
-                disabled={busy}
+                disabled={busy || size === null}
                 onClick={() => {
-                  controls.start(size);
+                  if (size !== null) controls.start(size);
                 }}
               >
                 Run self-test
@@ -125,6 +150,12 @@ function RunReport({ run }: { readonly run: TestRun }): ReactElement {
           </tbody>
         </table>
       </div>
+      {run.items.some((i) => i.error?.code === 'UPSTREAM_RATE_LIMITED') && (
+        <p className="hint">
+          UPSTREAM_RATE_LIMITED: a package registry (e.g. Maven Central) throttled Trivy. That is the registry, not this
+          service; the self-test does not wait out the registry&apos;s back-off.
+        </p>
+      )}
     </>
   );
 }

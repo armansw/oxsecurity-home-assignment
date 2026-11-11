@@ -152,6 +152,13 @@ describe('ScanProcessor', () => {
     expect(store.claimNext(WORKER)?.id).toBe(scan.id);
   });
 
+  it('fails a self-test scan at once instead of waiting out the upstream Retry-After', async () => {
+    const scan = { ...claim(), background: true };
+    const scanner = new FakeScanner(() => Promise.reject(new ScanError('UPSTREAM_RATE_LIMITED', 'Maven Central 429', true, { retryAfterMs: 1_800_000 })));
+    await processor({ scanner }).p.run(scan, WORKER, new AbortController().signal);
+    expect(store.findById(scan.id)).toMatchObject({ status: 'Failed', error: { code: 'UPSTREAM_RATE_LIMITED' } });
+  });
+
   it('fails permanently once attempts are exhausted', async () => {
     store.create('https://github.com/a/b.git');
     let scan = store.claimNext(WORKER)!;

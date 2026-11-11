@@ -433,14 +433,6 @@ th {
   gap: 0.5rem;
   align-items: center;
 }
-.selftest__size select {
-  font: inherit;
-  padding: 0.5rem 0.6rem;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--surface);
-  color: var(--text);
-}
 .selftest__verdict {
   margin: 0;
   padding: 0.6rem 0.85rem;
@@ -547,4 +539,33 @@ th {
   .selftest__progress span {
     transition: none;
   }
+}
+.selftest__controls {
+  flex-wrap: wrap;
+}
+.selftest__size {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.selftest__size input[type='range'] {
+  width: 9rem;
+  accent-color: var(--accent);
+}
+.selftest__size input[type='number'] {
+  width: 4.5rem;
+  font: inherit;
+  padding: 0.45rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.selftest__size input[aria-invalid='true'] {
+  border-color: var(--danger);
+}
+.selftest__eta {
+  font-size: 0.85rem;
+  white-space: nowrap;
 }

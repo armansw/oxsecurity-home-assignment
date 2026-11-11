@@ -156,7 +156,10 @@ export class ScanProcessor {
           return;
         case 'failure': {
           const { error } = outcome;
-          if (error.retryable && scan.attempts < this.opts.maxAttempts) {
+          // A self-test scan does not sit out an upstream Retry-After (e.g. Maven Central's 30 min): the run would
+          // stall on it. It fails with the upstream's code instead, which the report shows as such.
+          const waitsOnUpstream = scan.background && error.retryAfterMs !== undefined;
+          if (error.retryable && scan.attempts < this.opts.maxAttempts && !waitsOnUpstream) {
             const delay = Math.max(retryDelayMs(scan.attempts, this.opts.retryBaseMs, this.random), error.retryAfterMs ?? 0);
             store.requeue(scan.id, workerId, { runAfter: this.now() + delay, refundAttempt: false });
             this.metrics.recordOutcome('retried', { durationMs, code: error.code });

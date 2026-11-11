@@ -22,6 +22,7 @@ export interface ScanRow {
   phase: string | null;
   progress_pct: number | null;
   attempts: number;
+  background: number;
   report_bytes: number | null;
   vulns_scanned: number | null;
   critical_count: number | null;
@@ -297,6 +298,7 @@ export function toScan(row: ScanRow): Scan {
     phase: row.phase === null ? null : parsePhase(row.phase),
     progressPct: row.progress_pct,
     attempts: row.attempts,
+    background: row.background === 1,
     stats:
       row.status === 'Finished'
         ? {

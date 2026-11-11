@@ -70,7 +70,7 @@ const EnvSchema = z.object({
   RATE_LIMIT_PER_MIN: int(30, 1),
   /** In-app self-test (POST /api/test-runs): scans a sample of the large-repository corpus. */
   TEST_RUNS_ENABLED: z.enum(['true', 'false']).default('true').transform((v) => v === 'true'),
-  TEST_RUN_MAX_SIZE: int(30, 1),
+  TEST_RUN_MAX_SIZE: int(100, 1),
   /** Corpus repositories above this size are left out of self-test samples, to keep a run reasonably short. */
   TEST_RUN_MAX_REPO_MB: int(500, 1),
 

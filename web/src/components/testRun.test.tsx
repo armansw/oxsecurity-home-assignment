@@ -1,4 +1,4 @@
-import { act, render, renderHook, screen } from '@testing-library/react';
+import { act, fireEvent, render, renderHook, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '../api/errors';
@@ -175,12 +175,39 @@ function controls(overrides: Partial<TestRunControls> = {}): TestRunControls {
 }
 
 describe('TestRunPanel', () => {
-  it('offers a run size and starts the self-test', async () => {
+  it('takes any size from 1 to 100 by slider or by typing, and starts the self-test', async () => {
     const c = controls();
     render(<TestRunPanel controls={c} />);
-    await userEvent.selectOptions(screen.getByLabelText('Repositories to scan'), '30');
+    const box = screen.getByLabelText('Repositories to scan');
+    const slider = screen.getByLabelText('Repositories to scan (slider)');
+    expect(box).toHaveValue(20);
+    expect(screen.getByText('≈ 8 min')).toBeInTheDocument();
+
+    await userEvent.clear(box);
+    await userEvent.type(box, '29');
+    expect(slider).toHaveValue('29');
     await userEvent.click(screen.getByRole('button', { name: 'Run self-test' }));
-    expect(c.start).toHaveBeenCalledWith(30);
+    expect(c.start).toHaveBeenLastCalledWith(29);
+
+    fireEvent.change(slider, { target: { value: '100' } });
+    expect(box).toHaveValue(100);
+    expect(screen.getByText('≈ 42 min')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Run self-test' }));
+    expect(c.start).toHaveBeenLastCalledWith(100);
+
+    await userEvent.clear(box);
+    await userEvent.type(box, '101');
+    expect(box).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByText('1–100')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Run self-test' })).toBeDisabled();
+    await userEvent.clear(box);
+    await userEvent.type(box, '1');
+    expect(screen.getByText('≈ 1 min')).toBeInTheDocument();
+  });
+
+  it('caps the size at the eligible pool', () => {
+    render(<TestRunPanel controls={controls({ run: run({ poolSize: 60 }) })} />);
+    expect(screen.getByLabelText('Repositories to scan')).toHaveAttribute('max', '60');
   });
 
   it('shows a finished run: verdict, totals and one row per repository', () => {
@@ -191,6 +218,7 @@ describe('TestRunPanel', () => {
     expect(screen.getByText('52 MB / 150 MB')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'gin-gonic/gin' })).toHaveAttribute('href', 'https://github.com/gin-gonic/gin.git');
     expect(screen.getByText('REPO_NOT_FOUND')).toBeInTheDocument();
+    expect(screen.queryByText(/a package registry/)).toBeNull();
     expect(screen.getByText('1m 1s')).toBeInTheDocument();
     expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '2');
     expect(screen.getByText(/107 repositories across 9 ecosystems/)).toBeInTheDocument();
@@ -209,6 +237,12 @@ describe('TestRunPanel', () => {
     expect(screen.getByText('cloning')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(c.cancel).toHaveBeenCalled();
+  });
+
+  it('explains registry rate limits as not a service failure', () => {
+    const limited = run({ items: [item({ status: 'Failed', error: { code: 'UPSTREAM_RATE_LIMITED', message: '429' } })] });
+    render(<TestRunPanel controls={controls({ run: limited })} />);
+    expect(screen.getByText(/a package registry \(e.g. Maven Central\) throttled Trivy/)).toBeInTheDocument();
   });
 
   it('reports a breach, a cancelled run, a missing limit and errors honestly', () => {

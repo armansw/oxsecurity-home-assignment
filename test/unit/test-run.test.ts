@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { createInterface } from 'node:readline';
 import { describe, expect, it } from 'vitest';
 import { TEST_CORPUS, type CorpusRepo } from '../../src/application/test-corpus.js';
 import { TestRunService, type TestRunServiceOptions } from '../../src/application/test-run.service.js';
@@ -68,13 +69,10 @@ async function requestError(p: Promise<unknown>): Promise<RequestError> {
 }
 
 describe('TEST_CORPUS', () => {
-  it('matches test/large/corpus.tsv exactly', () => {
-    // Test-only read of a small text file (the no-readFile rule is about scan reports).
-    const rows = fs
-      .readFileSync(new URL('../large/corpus.tsv', import.meta.url), 'utf8')
-      .split('\n')
-      .filter((l) => l !== '' && !l.startsWith('#'))
-      .map((l) => l.split('\t'));
+  it('matches test/large/corpus.tsv exactly', async () => {
+    const rows: string[][] = [];
+    const lines = createInterface({ input: fs.createReadStream(new URL('../large/corpus.tsv', import.meta.url)) });
+    for await (const line of lines) if (line !== '' && !line.startsWith('#')) rows.push(line.split('\t'));
     expect(TEST_CORPUS.map((r) => [r.url, r.language, String(r.sizeMb)])).toEqual(rows.map((r) => r.slice(0, 3)));
     expect(TEST_CORPUS.length).toBeGreaterThanOrEqual(100);
   });

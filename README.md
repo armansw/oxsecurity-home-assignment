@@ -42,7 +42,7 @@ curl localhost:3000/api/scan/<scanId>                            # → Queued | 
 - **GraphQL** at `/graphql`: `startScan(repoUrl)` and `scan(id) { id status criticalVulnerabilities { … } }`, using the brief's exact types (GraphiQL at `/graphiql`).
 - **Errors** use one envelope, `{"error":{"code","message"}}`. A failed scan carries a stable code: `REPO_NOT_FOUND`, `SCANNER_FAILED`, `DISK_FULL`, ….
 - **Ops:** `/healthz`, `/readyz`, `/metrics` (Prometheus, including peak RSS per scan), `/api/system/memory` (live memory against the real limit).
-- **Self-test:** `POST /api/test-runs {"size":20}` scans a random sample of the corpus below (repositories ≤ 500 MB, spread across ecosystems) on the running service; `GET /api/test-runs/latest` reports each scan's result and peak memory, plus the kernel's limit-hit and OOM-kill counters for the run. One run at a time; its scans queue behind users' scans. The UI's **Run self-test** button drives it.
+- **Self-test:** `POST /api/test-runs {"size":1..100}` scans a random sample of the corpus below (repositories ≤ 500 MB, spread across ecosystems) on the running service; `GET /api/test-runs/latest` reports each scan's result and peak memory, plus the kernel's limit-hit and OOM-kill counters for the run. One run at a time; its scans queue behind users' scans. The UI's **Run self-test** button drives it.
 
 ## How it stays within memory
 

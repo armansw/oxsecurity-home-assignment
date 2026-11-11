@@ -46,6 +46,8 @@ export interface Scan {
   /** Parse progress 0–100 while phase = parsing. */
   readonly progressPct: number | null;
   readonly attempts: number;
+  /** A self-test scan: runs after user scans and does not wait out upstream rate limits. */
+  readonly background: boolean;
   readonly stats: ScanStats | null;
   readonly error: ScanFailure | null;
   readonly createdAt: Date;
