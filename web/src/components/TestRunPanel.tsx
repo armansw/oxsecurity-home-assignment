@@ -43,10 +43,12 @@ export function TestRunPanel({ controls }: { readonly controls: TestRunControls 
           </p>
         </div>
         <div className="selftest__controls">
-          {running ? (
+          {running && controls.ownsRun ? (
             <button type="button" className="secondary" disabled={busy} onClick={controls.cancel}>
               Cancel
             </button>
+          ) : running ? (
+            <span className="muted">Watching another visitor&apos;s run</span>
           ) : (
             <>
               <div className="selftest__size">
@@ -97,7 +99,12 @@ export function TestRunPanel({ controls }: { readonly controls: TestRunControls 
 
       {error !== null && (
         <p className="field-error" role="alert">
-          {error}
+          {error}{' '}
+          {controls.othersRunActive && (
+            <button type="button" className="secondary" disabled={busy} onClick={controls.watchActive}>
+              Watch it
+            </button>
+          )}
         </p>
       )}
       {run !== null && <RunReport run={run} secondsPerRepo={perRepo} />}

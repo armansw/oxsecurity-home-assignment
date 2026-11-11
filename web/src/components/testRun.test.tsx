@@ -1,9 +1,9 @@
 import { act, fireEvent, render, renderHook, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '../api/errors';
 import { createTestRunApi, testRun, testRunSettings, type TestRun, type TestRunApi, type TestRunItem, type TestRunSettings } from '../api/testRuns';
-import { TEST_RUN_POLL_INTERVAL_MS, useTestRun, type TestRunControls } from '../hooks/useTestRun';
+import { ownRunStore, TEST_RUN_POLL_INTERVAL_MS, useTestRun, type TestRunControls } from '../hooks/useTestRun';
 import { formatEstimate, TestRunPanel } from './TestRunPanel';
 
 const SETTINGS: TestRunSettings = { maxSize: 100, poolSize: 107, secondsPerRepo: 5.4, basedOnScans: 58 };
@@ -116,77 +116,133 @@ function fakeApi(overrides: Partial<TestRunApi> = {}): TestRunApi {
 }
 
 describe('useTestRun', () => {
-  it('loads the latest run and polls only while it is running', async () => {
-    vi.useFakeTimers();
-    const api = fakeApi({ latest: vi.fn(() => Promise.resolve(run({ state: 'running' }))) });
-    const { result } = renderHook(() => useTestRun(api));
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(0);
-    });
-    expect(result.current.run?.state).toBe('running');
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(TEST_RUN_POLL_INTERVAL_MS);
-    });
-    expect(api.get).toHaveBeenCalledWith(ID, expect.any(AbortSignal));
-    expect(result.current.run?.state).toBe('finished');
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(TEST_RUN_POLL_INTERVAL_MS * 3);
-    });
-    expect(api.get).toHaveBeenCalledTimes(1);
-    expect(result.current.settings).toEqual(SETTINGS); // reloaded once the run ended
+  beforeEach(() => {
+    window.localStorage.clear();
   });
 
-  it('surfaces load, poll and action errors', async () => {
+  const settle = async (ms = 0) => {
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(ms);
+    });
+  };
+
+  it('shows nothing in a fresh browser: runs are per browser, not per server', async () => {
+    vi.useFakeTimers();
+    const api = fakeApi();
+    const { result } = renderHook(() => useTestRun(api));
+    await settle();
+    expect(result.current.run).toBeNull();
+    expect(api.get).not.toHaveBeenCalled();
+    expect(api.latest).not.toHaveBeenCalled();
+    expect(result.current.settings).toEqual(SETTINGS);
+  });
+
+  it("resumes this browser's own run after a reload and polls it until it ends", async () => {
+    vi.useFakeTimers();
+    ownRunStore.write(ID);
+    const api = fakeApi({ get: vi.fn().mockResolvedValueOnce(run({ state: 'running' })).mockResolvedValue(run()) });
+    const { result } = renderHook(() => useTestRun(api));
+    await settle();
+    expect(result.current.run?.state).toBe('running');
+    expect(result.current.ownsRun).toBe(true);
+    await settle(TEST_RUN_POLL_INTERVAL_MS);
+    expect(result.current.run?.state).toBe('finished');
+    await settle(TEST_RUN_POLL_INTERVAL_MS * 3);
+    expect(api.get).toHaveBeenCalledTimes(2);
+  });
+
+  it('forgets a stored run the server no longer has, and reports other load errors', async () => {
+    vi.useFakeTimers();
+    ownRunStore.write(ID);
+    const gone = renderHook(() => useTestRun(fakeApi({ get: vi.fn(() => Promise.reject(new ApiError('NOT_FOUND', 'gone', 404))) })));
+    await settle();
+    expect(gone.result.current.run).toBeNull();
+    expect(gone.result.current.error).toBeNull();
+    expect(ownRunStore.read()).toBeNull();
+
+    ownRunStore.write(ID);
+    const down = renderHook(() => useTestRun(fakeApi({ get: vi.fn(() => Promise.reject(new ApiError('X', 'down', 500))) })));
+    await settle();
+    expect(down.result.current.error).toBe('down');
+    expect(ownRunStore.read()).toBe(ID);
+  });
+
+  it('starts and remembers a run, cancels only its own, and surfaces poll and action errors', async () => {
     vi.useFakeTimers();
     const api = fakeApi({
-      latest: vi.fn(() => Promise.resolve(run({ state: 'running' }))),
       get: vi.fn(() => Promise.reject(new ApiError('X', 'offline', 500))),
       cancel: vi.fn(() => Promise.reject(new ApiError('X', 'nope', 500))),
     });
     const { result } = renderHook(() => useTestRun(api));
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(0);
+    act(() => {
+      result.current.start(10);
     });
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(TEST_RUN_POLL_INTERVAL_MS);
-    });
+    await settle();
+    expect(api.start).toHaveBeenCalledWith(10);
+    expect(ownRunStore.read()).toBe(ID);
+    expect(result.current.ownsRun).toBe(true);
+    await settle(TEST_RUN_POLL_INTERVAL_MS);
     expect(result.current.error).toBe('offline');
     act(() => {
       result.current.cancel();
     });
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(0);
-    });
+    await settle();
+    expect(api.cancel).toHaveBeenCalledWith(ID);
     expect(result.current.error).toBe('nope');
     expect(result.current.busy).toBe(false);
-
-    const failing = fakeApi({ latest: vi.fn(() => Promise.reject(new ApiError('X', 'down', 500))) });
-    const second = renderHook(() => useTestRun(failing));
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(0);
-    });
-    expect(second.result.current.error).toBe('down');
-    act(() => {
-      second.result.current.cancel(); // no run: nothing to cancel
-    });
-    expect(failing.cancel).not.toHaveBeenCalled();
   });
 
-  it('starts a run', async () => {
-    const api = fakeApi();
+  it("offers to watch someone else's run when the server is busy, without taking ownership", async () => {
+    vi.useFakeTimers();
+    const api = fakeApi({
+      start: vi.fn(() => Promise.reject(new ApiError('TEST_RUN_ACTIVE', 'busy', 409))),
+      latest: vi.fn().mockResolvedValueOnce(run({ state: 'running' })).mockResolvedValueOnce(null),
+    });
     const { result } = renderHook(() => useTestRun(api));
     act(() => {
-      result.current.start(10);
+      result.current.start(5);
     });
-    await vi.waitFor(() => {
-      expect(result.current.run?.state).toBe('running');
+    await settle();
+    expect(result.current.othersRunActive).toBe(true);
+    expect(result.current.error).toMatch(/Another self-test is running/);
+
+    act(() => {
+      result.current.watchActive();
     });
-    expect(api.start).toHaveBeenCalledWith(10);
+    await settle();
+    expect(result.current.run?.state).toBe('running');
+    expect(result.current.ownsRun).toBe(false);
+    expect(ownRunStore.read()).toBeNull();
+    act(() => {
+      result.current.cancel(); // not ours: nothing happens
+    });
+    expect(api.cancel).not.toHaveBeenCalled();
+
+    act(() => {
+      result.current.watchActive();
+    });
+    await settle();
+    expect(result.current.error).toBe('No self-test is running.');
+  });
+
+  it('works when browser storage is unavailable', () => {
+    const get = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new Error('denied');
+    });
+    const set = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('denied');
+    });
+    expect(ownRunStore.read()).toBeNull();
+    expect(() => {
+      ownRunStore.write(ID);
+    }).not.toThrow();
+    get.mockRestore();
+    set.mockRestore();
   });
 });
 
 function controls(overrides: Partial<TestRunControls> = {}): TestRunControls {
-  return { run: null, settings: SETTINGS, error: null, busy: false, start: vi.fn(), cancel: vi.fn(), ...overrides };
+  return { run: null, ownsRun: true, settings: SETTINGS, error: null, othersRunActive: false, busy: false, start: vi.fn(), cancel: vi.fn(), watchActive: vi.fn(), ...overrides };
 }
 
 describe('TestRunPanel', () => {
@@ -261,6 +317,18 @@ describe('TestRunPanel', () => {
     expect(screen.getByText('cloning')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(c.cancel).toHaveBeenCalled();
+  });
+
+  it("shows someone else's run without a cancel button, and offers to watch a busy server's run", async () => {
+    const watching = render(<TestRunPanel controls={controls({ ownsRun: false, run: run({ state: 'running' }) })} />);
+    expect(screen.getByText("Watching another visitor's run")).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Cancel' })).toBeNull();
+    watching.unmount();
+
+    const c = controls({ othersRunActive: true, error: 'Another self-test is running on this server right now (one at a time).' });
+    render(<TestRunPanel controls={c} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Watch it' }));
+    expect(c.watchActive).toHaveBeenCalled();
   });
 
   it('explains registry rate limits as not a service failure', () => {
