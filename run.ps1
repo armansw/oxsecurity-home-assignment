@@ -12,7 +12,6 @@
 # everything else is scripts\cg.mjs, shared by every OS. Requires Git for Windows (winget install --id Git.Git -e).
 
 $ErrorActionPreference = 'Stop'
-$ProgressPreference = 'SilentlyContinue'   # Invoke-WebRequest is many times slower with the progress bar on
 [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 
 $NodeVersion = '24.22.1'   # same pin as run.sh
@@ -42,14 +41,20 @@ function Get-Node {
   $tmp = Join-Path ([IO.Path]::GetTempPath()) ("cg-" + [guid]::NewGuid())
   New-Item -ItemType Directory -Path $tmp | Out-Null
   try {
+    # Plain .NET, not cmdlets: Windows PowerShell started from PowerShell 7 inherits a module path that can break
+    # autoloading of Get-FileHash, Expand-Archive and Invoke-WebRequest.
     $base = "https://nodejs.org/dist/v$NodeVersion"
-    Invoke-WebRequest -UseBasicParsing "$base/SHASUMS256.txt" -OutFile "$tmp\SHASUMS256.txt"
-    Invoke-WebRequest -UseBasicParsing "$base/$name.zip" -OutFile "$tmp\$name.zip"
-    $line = Get-Content "$tmp\SHASUMS256.txt" | Where-Object { $_ -match "\s$([regex]::Escape("$name.zip"))$" }
+    $web = New-Object System.Net.WebClient
+    $web.DownloadFile("$base/SHASUMS256.txt", "$tmp\SHASUMS256.txt")
+    $web.DownloadFile("$base/$name.zip", "$tmp\$name.zip")
+    $line = [IO.File]::ReadAllLines("$tmp\SHASUMS256.txt") | Where-Object { $_ -match "\s$([regex]::Escape("$name.zip"))$" }
     $expected = ($line -split '\s+')[0]
-    $actual = (Get-FileHash -Algorithm SHA256 "$tmp\$name.zip").Hash.ToLower()
+    $sha = [Security.Cryptography.SHA256]::Create()
+    $stream = [IO.File]::OpenRead("$tmp\$name.zip")
+    try { $actual = -join ($sha.ComputeHash($stream) | ForEach-Object { $_.ToString('x2') }) } finally { $stream.Dispose() }
     if (-not $expected -or $actual -ne $expected) { throw "checksum mismatch for $name.zip: refusing to use it" }
-    Expand-Archive -Path "$tmp\$name.zip" -DestinationPath $tmp -Force
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    [IO.Compression.ZipFile]::ExtractToDirectory("$tmp\$name.zip", $tmp)
     if (Test-Path (Join-Path $Tools 'node')) { Remove-Item -Recurse -Force (Join-Path $Tools 'node') }
     New-Item -ItemType Directory -Path $Tools -Force | Out-Null
     Move-Item (Join-Path $tmp $name) (Join-Path $Tools 'node')
