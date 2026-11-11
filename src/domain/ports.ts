@@ -70,6 +70,8 @@ export interface TestRunStore {
   findActive(): TestRun | undefined;
   /** Fail the run's still-Queued scans as CANCELLED (a scan already running finishes). Returns how many. */
   cancel(id: TestRunId): number;
+  /** Durations of the most recent finished self-test scans (newest first), for time estimates. */
+  recentScanDurationsMs(limit: number): number[];
 }
 
 export interface RepositoryFetcher {

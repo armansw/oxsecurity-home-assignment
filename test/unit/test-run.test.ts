@@ -205,6 +205,19 @@ describe('TestRunService', () => {
     await expect(broken.service.start(1)).rejects.toThrow('boom');
   });
 
+  it('estimates time per repository from measured self-test scans only', async () => {
+    const h = setup();
+    expect(h.service.settings()).toEqual({ maxSize: 6, poolSize: 6, secondsPerRepo: null, basedOnScans: 0 });
+    h.scans.create('https://github.com/user/scan'); // a user scan does not count
+    await h.service.start(2);
+    let n = 0;
+    for (let s = h.scans.claimNext('w'); s !== undefined; s = h.scans.claimNext('w')) {
+      n += 1;
+      h.scans.markFinished(s.id, 'w', { ...STATS, durationMs: s.background ? n * 2000 : 99_000 });
+    }
+    expect(h.service.settings()).toEqual({ maxSize: 6, poolSize: 6, secondsPerRepo: 5, basedOnScans: 2 });
+  });
+
   it('uses Math.random by default', async () => {
     const runs = new SqliteTestRunStore(openDatabase(':memory:'));
     const service = new TestRunService(runs, { corpus: CORPUS, allowedHosts: ['github.com'], maxSize: 5, maxRepoMb: 500, readCounters: () => Promise.resolve(null) });

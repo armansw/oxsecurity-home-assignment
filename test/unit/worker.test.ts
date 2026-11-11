@@ -119,12 +119,17 @@ describe('Worker', () => {
   });
 
   it('warns when loops do not stop within the grace period', async () => {
-    const stuck = new FakeScanner(() => new Promise(() => undefined)); // ignores abort
+    let entered = false;
+    const stuck = new FakeScanner(() => {
+      entered = true;
+      return new Promise(() => undefined); // ignores abort
+    });
     const { worker: w, log } = build(stuck);
     w.start();
     store.create('x');
     w.wake();
-    await waitFor(() => store.countQueued() === 0);
+    // Wait for the scanner itself, not just the claim: a scan still cloning would stop promptly and log nothing.
+    await waitFor(() => entered);
     await w.stop(30);
     expect(log.entries.some((e) => e.msg.includes('grace period'))).toBe(true);
     worker = undefined; // already stopped

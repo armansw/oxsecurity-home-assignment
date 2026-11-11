@@ -48,6 +48,8 @@ export function registerTestRunRoutes(app: FastifyInstance, deps: TestRunControl
     return reply.code(202).header('location', `/api/test-runs/${report.run.id}`).send(view(report));
   });
 
+  app.get('/api/test-runs/settings', (_request, reply) => reply.header('cache-control', 'no-store').send(testRuns.settings()));
+
   // Registered before /:testRunId so "latest" is not taken for an id.
   app.get('/api/test-runs/latest', async (_request, reply) => reply.header('cache-control', 'no-store').send(view(await testRuns.latest())));
 

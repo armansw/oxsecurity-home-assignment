@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useState } from 'react';
 import { toApiError } from '../api/errors';
-import type { TestRun, TestRunApi } from '../api/testRuns';
+import type { TestRun, TestRunApi, TestRunSettings } from '../api/testRuns';
 
 export const TEST_RUN_POLL_INTERVAL_MS = 3000;
 
 export interface TestRunControls {
   readonly run: TestRun | null;
+  /** Limits and the measured time per repository; null until loaded (or if the server cannot say). */
+  readonly settings: TestRunSettings | null;
   readonly error: string | null;
   readonly busy: boolean;
   readonly start: (size: number) => void;
@@ -20,6 +22,7 @@ export function useTestRun(api: TestRunApi): TestRunControls {
   const [run, setRun] = useState<TestRun | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [settings, setSettings] = useState<TestRunSettings | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -36,6 +39,21 @@ export function useTestRun(api: TestRunApi): TestRunControls {
 
   const runId = run?.testRunId;
   const running = run?.state === 'running';
+
+  // Reload when a run ends: its scans refine the measured time per repository.
+  useEffect(() => {
+    if (running) return;
+    const controller = new AbortController();
+    api
+      .settings(controller.signal)
+      .then(setSettings)
+      .catch(() => {
+        // Without settings the panel falls back to its defaults and shows no estimate.
+      });
+    return () => {
+      controller.abort();
+    };
+  }, [api, running]);
   useEffect(() => {
     if (runId === undefined || !running) return;
     const controller = new AbortController();
@@ -71,6 +89,7 @@ export function useTestRun(api: TestRunApi): TestRunControls {
 
   return {
     run,
+    settings,
     error,
     busy,
     start: (size) => {

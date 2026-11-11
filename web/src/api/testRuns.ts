@@ -50,7 +50,22 @@ export interface TestRun {
   readonly items: readonly TestRunItem[];
 }
 
+/** GET /api/test-runs/settings: limits and a measured time per repository. */
+export interface TestRunSettings {
+  readonly maxSize: number;
+  readonly poolSize: number;
+  /** Mean duration of recent self-test scans on the live service; null before any has finished. */
+  readonly secondsPerRepo: number | null;
+  readonly basedOnScans: number;
+}
+
+export function testRunSettings(value: unknown): TestRunSettings {
+  const o = asObject(value, 'settings');
+  return { maxSize: num(o, 'maxSize'), poolSize: num(o, 'poolSize'), secondsPerRepo: optNum(o, 'secondsPerRepo'), basedOnScans: num(o, 'basedOnScans') };
+}
+
 export interface TestRunApi {
+  readonly settings: (signal?: AbortSignal) => Promise<TestRunSettings>;
   /** The most recent run, or null when none has been started. */
   readonly latest: (signal?: AbortSignal) => Promise<TestRun | null>;
   readonly get: (id: string, signal?: AbortSignal) => Promise<TestRun>;
@@ -141,6 +156,11 @@ export function createTestRunApi(base: string = API_BASE): TestRunApi {
   const post = (body?: object): RequestInit =>
     body === undefined ? { method: 'POST' } : { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) };
   return {
+    settings: async (signal) => {
+      const res = await fetchJson(`${base}/api/test-runs/settings`, signal ? { signal } : {});
+      if (!res.ok) throw errorFromEnvelope(res.status, res.body);
+      return testRunSettings(res.body);
+    },
     latest: async (signal) => {
       const res = await fetchJson(`${base}/api/test-runs/latest`, signal ? { signal } : {});
       if (res.status === 404) return null;

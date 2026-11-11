@@ -2,9 +2,11 @@ import { act, fireEvent, render, renderHook, screen } from '@testing-library/rea
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '../api/errors';
-import { createTestRunApi, testRun, type TestRun, type TestRunApi, type TestRunItem } from '../api/testRuns';
+import { createTestRunApi, testRun, testRunSettings, type TestRun, type TestRunApi, type TestRunItem, type TestRunSettings } from '../api/testRuns';
 import { TEST_RUN_POLL_INTERVAL_MS, useTestRun, type TestRunControls } from '../hooks/useTestRun';
-import { TestRunPanel } from './TestRunPanel';
+import { formatEstimate, TestRunPanel } from './TestRunPanel';
+
+const SETTINGS: TestRunSettings = { maxSize: 100, poolSize: 107, secondsPerRepo: 5.4, basedOnScans: 58 };
 
 const ID = '11111111-1111-4111-8111-111111111111';
 
@@ -69,6 +71,17 @@ describe('testRun guard and client', () => {
     expect(() => testRun({ ...run(), items: [{ ...item(), error: 'x' }] })).toThrow();
   });
 
+  it('reads the settings', async () => {
+    expect(testRunSettings(SETTINGS)).toEqual(SETTINGS);
+    expect(() => testRunSettings({ ...SETTINGS, maxSize: 'x' })).toThrow();
+    vi.spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(json(SETTINGS))
+      .mockResolvedValueOnce(json({ error: { code: 'INTERNAL', message: 'boom' } }, 500));
+    const api = createTestRunApi('');
+    await expect(api.settings()).resolves.toEqual(SETTINGS);
+    await expect(api.settings()).rejects.toMatchObject({ code: 'INTERNAL' });
+  });
+
   it('calls the REST endpoints and maps errors and the empty state', async () => {
     const fetchMock = vi
       .spyOn(globalThis, 'fetch')
@@ -93,6 +106,7 @@ describe('testRun guard and client', () => {
 
 function fakeApi(overrides: Partial<TestRunApi> = {}): TestRunApi {
   return {
+    settings: vi.fn(() => Promise.resolve(SETTINGS)),
     latest: vi.fn(() => Promise.resolve(null)),
     get: vi.fn(() => Promise.resolve(run())),
     start: vi.fn(() => Promise.resolve(run({ state: 'running' }))),
@@ -119,6 +133,7 @@ describe('useTestRun', () => {
       await vi.advanceTimersByTimeAsync(TEST_RUN_POLL_INTERVAL_MS * 3);
     });
     expect(api.get).toHaveBeenCalledTimes(1);
+    expect(result.current.settings).toEqual(SETTINGS); // reloaded once the run ended
   });
 
   it('surfaces load, poll and action errors', async () => {
@@ -171,7 +186,7 @@ describe('useTestRun', () => {
 });
 
 function controls(overrides: Partial<TestRunControls> = {}): TestRunControls {
-  return { run: null, error: null, busy: false, start: vi.fn(), cancel: vi.fn(), ...overrides };
+  return { run: null, settings: SETTINGS, error: null, busy: false, start: vi.fn(), cancel: vi.fn(), ...overrides };
 }
 
 describe('TestRunPanel', () => {
@@ -181,7 +196,8 @@ describe('TestRunPanel', () => {
     const box = screen.getByLabelText('Repositories to scan');
     const slider = screen.getByLabelText('Repositories to scan (slider)');
     expect(box).toHaveValue(20);
-    expect(screen.getByText('≈ 8 min')).toBeInTheDocument();
+    expect(screen.getByText('≈ 2 min')).toBeInTheDocument();
+    expect(screen.getByText('≈ 2 min')).toHaveAttribute('title', 'Measured: 5.4 s per repository over the last 58 self-test scans');
 
     await userEvent.clear(box);
     await userEvent.type(box, '29');
@@ -191,7 +207,7 @@ describe('TestRunPanel', () => {
 
     fireEvent.change(slider, { target: { value: '100' } });
     expect(box).toHaveValue(100);
-    expect(screen.getByText('≈ 42 min')).toBeInTheDocument();
+    expect(screen.getByText('≈ 9 min')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Run self-test' }));
     expect(c.start).toHaveBeenLastCalledWith(100);
 
@@ -202,12 +218,20 @@ describe('TestRunPanel', () => {
     expect(screen.getByRole('button', { name: 'Run self-test' })).toBeDisabled();
     await userEvent.clear(box);
     await userEvent.type(box, '1');
-    expect(screen.getByText('≈ 1 min')).toBeInTheDocument();
+    expect(screen.getByText('≈ 5 s')).toBeInTheDocument();
   });
 
-  it('caps the size at the eligible pool', () => {
-    render(<TestRunPanel controls={controls({ run: run({ poolSize: 60 }) })} />);
+  it('caps the size at the eligible pool, and shows no estimate before anything was measured', () => {
+    render(<TestRunPanel controls={controls({ settings: null, run: run({ poolSize: 60 }) })} />);
     expect(screen.getByLabelText('Repositories to scan')).toHaveAttribute('max', '60');
+    expect(screen.queryByText(/≈/)).toBeNull();
+  });
+
+  it('formats estimates in seconds, then minutes', () => {
+    expect(formatEstimate(10, 5.4)).toBe('≈ 54 s');
+    expect(formatEstimate(0, 5.4)).toBe('≈ 1 s');
+    expect(formatEstimate(30, 5.4)).toBe('≈ 3 min');
+    expect(formatEstimate(100, 5.4)).toBe('≈ 9 min');
   });
 
   it('shows a finished run: verdict, totals and one row per repository', () => {
@@ -233,7 +257,7 @@ describe('TestRunPanel', () => {
       }),
     });
     render(<TestRunPanel controls={c} />);
-    expect(screen.getByRole('status')).toHaveTextContent('Running · 1 of 3 done · within the 150 MB limit so far');
+    expect(screen.getByRole('status')).toHaveTextContent('Running · 1 of 3 done · ≈ 11 s left · within the 150 MB limit so far');
     expect(screen.getByText('cloning')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(c.cancel).toHaveBeenCalled();

@@ -55,6 +55,11 @@ export class SqliteTestRunStore implements TestRunStore {
       scans: db.prepare<[string], ScanRow>(
         `SELECT s.* FROM test_run_scans l JOIN scans s ON s.id = l.scan_id WHERE l.run_id = ?`,
       ),
+      recentDurations: db.prepare<[number], { d: number }>(
+        `SELECT duration_ms AS d FROM scans
+          WHERE background = 1 AND status = 'Finished' AND duration_ms IS NOT NULL
+          ORDER BY finished_at DESC LIMIT ?`,
+      ),
       markCancelled: db.prepare<{ id: string; now: number }>(
         `UPDATE test_runs SET cancelled_at = @now WHERE id = @id AND cancelled_at IS NULL`,
       ),
@@ -108,6 +113,10 @@ export class SqliteTestRunStore implements TestRunStore {
       this.stmt.markCancelled.run({ id, now });
       return this.stmt.cancelQueued.run({ id, now }).changes;
     })();
+  }
+
+  recentScanDurationsMs(limit: number): number[] {
+    return this.stmt.recentDurations.all(limit).map((r) => r.d);
   }
 
   private load(row: RunRow | undefined): TestRun | undefined {

@@ -82,6 +82,12 @@ describe('self-test API', () => {
   it('runs a sample of the corpus to completion and reports memory against the limit', async () => {
     const app = await harness();
     expect((await app.inject({ method: 'GET', url: '/api/test-runs/latest' })).statusCode).toBe(404);
+    expect((await app.inject({ method: 'GET', url: '/api/test-runs/settings' })).json()).toEqual({
+      maxSize: 4,
+      poolSize: 4,
+      secondsPerRepo: null,
+      basedOnScans: 0,
+    });
 
     const started = await app.inject({ method: 'POST', url: '/api/test-runs', payload: { size: 3 } });
     expect(started.statusCode).toBe(202);
@@ -99,6 +105,8 @@ describe('self-test API', () => {
     expect(done.memory).toMatchObject({ limitMb: 150, limitHitsDuringRun: 0, oomKillsDuringRun: 0, withinLimit: true });
     expect(done.items[0]).toMatchObject({ status: 'Finished', criticalCount: 1, vulnerabilitiesScanned: 2, error: null });
     expect(done.items[0]?.peakMemoryMb).toBeGreaterThan(0);
+
+    expect((await app.inject({ method: 'GET', url: '/api/test-runs/settings' })).json()).toMatchObject({ basedOnScans: 3 });
 
     const latest = await app.inject({ method: 'GET', url: '/api/test-runs/latest' });
     expect(latest.headers['cache-control']).toBe('no-store');

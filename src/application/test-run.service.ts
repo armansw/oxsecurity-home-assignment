@@ -21,6 +21,23 @@ export interface TestRunServiceOptions {
   readonly random?: () => number;
 }
 
+/** What the UI needs before starting a run. */
+export interface TestRunSettings {
+  readonly maxSize: number;
+  /** Repositories a run samples from. */
+  readonly poolSize: number;
+  /**
+   * Measured: mean duration of the most recent self-test scans on this service (scans run one at a time, so a
+   * run takes about size × this). Null until a self-test scan has finished.
+   */
+  readonly secondsPerRepo: number | null;
+  /** How many scans that mean is based on. */
+  readonly basedOnScans: number;
+}
+
+/** How many recent scans the time estimate averages. */
+export const ESTIMATE_SAMPLE = 200;
+
 export type TestRunState = 'running' | 'finished' | 'cancelled';
 
 export interface TestRunReport {
@@ -66,6 +83,17 @@ export class TestRunService {
   /** How many repositories a run can sample from. */
   get poolSize(): number {
     return this.pool.length;
+  }
+
+  settings(): TestRunSettings {
+    const durations = this.store.recentScanDurationsMs(ESTIMATE_SAMPLE);
+    const mean = durations.length === 0 ? null : sum(durations) / durations.length / 1000;
+    return {
+      maxSize: Math.min(this.opts.maxSize, this.pool.length),
+      poolSize: this.pool.length,
+      secondsPerRepo: mean === null ? null : Math.round(mean * 10) / 10,
+      basedOnScans: durations.length,
+    };
   }
 
   async start(size: number): Promise<TestRunReport> {

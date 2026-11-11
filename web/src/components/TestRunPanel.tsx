@@ -6,8 +6,11 @@ import type { TestRunControls } from '../hooks/useTestRun';
 /** Server default for TEST_RUN_MAX_SIZE; a run never exceeds the eligible pool either. */
 export const TEST_RUN_MAX_SIZE = 100;
 export const TEST_RUN_DEFAULT_SIZE = 20;
-/** Observed on the live service: about 25 s per corpus repository, scanned one at a time. */
-const SECONDS_PER_REPO = 25;
+/** "≈ 45 s", "≈ 9 min": scans run one at a time, so a run takes about count × the measured time per repository. */
+export function formatEstimate(repos: number, secondsPerRepo: number): string {
+  const seconds = repos * secondsPerRepo;
+  return seconds < 90 ? `≈ ${String(Math.max(1, Math.round(seconds)))} s` : `≈ ${String(Math.round(seconds / 60))} min`;
+}
 
 function parseSize(text: string, max: number): number | null {
   if (!/^\d{1,3}$/.test(text)) return null;
@@ -20,8 +23,10 @@ function parseSize(text: string, max: number): number | null {
  * time and always behind real users' scans, and the panel reports every result against the memory limit.
  */
 export function TestRunPanel({ controls }: { readonly controls: TestRunControls }): ReactElement {
-  const { run, error, busy } = controls;
-  const max = Math.min(TEST_RUN_MAX_SIZE, run?.poolSize ?? TEST_RUN_MAX_SIZE);
+  const { run, error, busy, settings } = controls;
+  const max = settings?.maxSize ?? Math.min(TEST_RUN_MAX_SIZE, run?.poolSize ?? TEST_RUN_MAX_SIZE);
+  const perRepo = settings?.secondsPerRepo ?? null;
+  const poolSize = settings?.poolSize ?? run?.poolSize ?? null;
   const [text, setText] = useState(String(TEST_RUN_DEFAULT_SIZE));
   const size = parseSize(text, max);
   const running = run?.state === 'running';
@@ -33,7 +38,7 @@ export function TestRunPanel({ controls }: { readonly controls: TestRunControls 
           <h2 id="selftest-heading">Self-test on real repositories</h2>
           <p className="muted">
             Scans a random sample of the large-repository corpus
-            {run !== null && <> ({String(run.poolSize)} repositories across 9 ecosystems)</>} on this live service and checks
+            {poolSize !== null && <> ({String(poolSize)} repositories across 9 ecosystems)</>} on this live service and checks
             every scan against the memory limit. Repositories run one at a time, after anyone&apos;s own scans.
           </p>
         </div>
@@ -69,8 +74,11 @@ export function TestRunPanel({ controls }: { readonly controls: TestRunControls 
                     setText(e.target.value);
                   }}
                 />
-                <span className="muted selftest__eta">
-                  {size === null ? `1–${String(max)}` : `≈ ${String(Math.max(1, Math.round((size * SECONDS_PER_REPO) / 60)))} min`}
+                <span
+                  className="muted selftest__eta"
+                  title={perRepo === null || settings === null ? undefined : `Measured: ${String(perRepo)} s per repository over the last ${String(settings.basedOnScans)} self-test scans`}
+                >
+                  {size === null ? `1–${String(max)}` : perRepo === null ? '' : formatEstimate(size, perRepo)}
                 </span>
               </div>
               <button
@@ -92,18 +100,18 @@ export function TestRunPanel({ controls }: { readonly controls: TestRunControls 
           {error}
         </p>
       )}
-      {run !== null && <RunReport run={run} />}
+      {run !== null && <RunReport run={run} secondsPerRepo={perRepo} />}
     </section>
   );
 }
 
-function RunReport({ run }: { readonly run: TestRun }): ReactElement {
+function RunReport({ run, secondsPerRepo }: { readonly run: TestRun; readonly secondsPerRepo: number | null }): ReactElement {
   const { counts, memory, totals } = run;
   const done = counts.finished + counts.failed + counts.expired;
   const limit = memory.limitMb;
   return (
     <>
-      <Verdict run={run} />
+      <Verdict run={run} secondsPerRepo={secondsPerRepo} />
       <div
         className="selftest__progress"
         role="progressbar"
@@ -160,7 +168,7 @@ function RunReport({ run }: { readonly run: TestRun }): ReactElement {
   );
 }
 
-function Verdict({ run }: { readonly run: TestRun }): ReactElement {
+function Verdict({ run, secondsPerRepo }: { readonly run: TestRun; readonly secondsPerRepo: number | null }): ReactElement {
   const { counts, memory, state } = run;
   const limit = memory.limitMb === null ? '' : ` ${String(memory.limitMb)} MB`;
   if (state === 'running') {
@@ -168,6 +176,7 @@ function Verdict({ run }: { readonly run: TestRun }): ReactElement {
     return (
       <p className="selftest__verdict selftest__verdict--running" role="status">
         Running · {done} of {counts.total} done
+        {secondsPerRepo !== null && ` · ${formatEstimate(counts.total - done, secondsPerRepo)} left`}
         {memory.withinLimit !== false ? ` · within the${limit} limit so far` : ' · memory limit exceeded'}
       </p>
     );
