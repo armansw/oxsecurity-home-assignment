@@ -49,6 +49,12 @@ const EnvSchema = z.object({
     .string()
     .default('https://maven-central.storage-download.googleapis.com/maven2/')
     .refine((v) => v === '' || /^https?:\/\/[^\s<>&"']+$/.test(v), 'must be an http(s) URL or empty'),
+  /**
+   * Disk cache for the POMs Trivy fetches through the Maven mirror, so repeat scans of large Java projects skip the
+   * one-by-one downloads. Size limit in MB (least recently used files are evicted); 0 disables it.
+   */
+  TRIVY_MAVEN_CACHE_MB: int(256),
+  TRIVY_MAVEN_CACHE_DIR: z.string().optional(),
   /** Go GC target for the Trivy child; below 100 trades CPU for a smaller heap. */
   TRIVY_GOGC: int(50, 1),
   GIT_BIN: z.string().min(1).default('git'),
@@ -91,6 +97,7 @@ export type Env = z.infer<typeof EnvSchema>;
 
 export interface Config extends Env {
   readonly trivyCacheDir: string;
+  readonly mavenCacheDir: string;
 }
 
 /** Parse and validate the environment once at boot; any invalid value aborts startup with a clear message. */
@@ -107,5 +114,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   if (e.ROLE === 'scanner' && e.SCANNER_TOKEN === undefined) {
     throw new Error('Invalid configuration: ROLE=scanner requires SCANNER_TOKEN');
   }
-  return Object.freeze({ ...e, trivyCacheDir: e.TRIVY_CACHE_DIR ?? path.join(e.WORK_DIR, '.trivy-cache') });
+  return Object.freeze({
+    ...e,
+    trivyCacheDir: e.TRIVY_CACHE_DIR ?? path.join(e.WORK_DIR, '.trivy-cache'),
+    mavenCacheDir: e.TRIVY_MAVEN_CACHE_DIR ?? path.join(e.WORK_DIR, '.maven-cache'),
+  });
 }

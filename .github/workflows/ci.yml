@@ -60,18 +60,22 @@ jobs:
   docker-e2e:
     name: docker e2e (${{ matrix.name }})
     needs: [backend]
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner || 'ubuntu-latest' }}
     strategy:
       fail-fast: false
       matrix:
         include:
           # Real Trivy scan, full stack: also builds the web image and checks the UI + nginx proxy.
           - { name: "trivy + web UI, 200m", files: "", services: "", flag: "", web: "http://localhost:8080" }
+          # The same on a native arm64 machine (Apple Silicon, Graviton): every image and binary in its arm64 build.
+          - { name: "trivy + web UI, 200m, arm64", runner: ubuntu-24.04-arm, files: "", services: "", flag: "", web: "http://localhost:8080" }
           - { name: "600 MB fixture, 200m", files: "-f docker-compose.oom.yml", services: app, flag: --fixture, web: "" }
           # Tighter than the brief.
           - { name: "600 MB fixture, 150m", files: "-f docker-compose.oom.yml -f docker-compose.150m.yml", services: app, flag: --fixture, web: "", extra: docker-compose.150m.yml }
           # API and worker as separate containers.
-          - { name: "split api/worker + web UI", files: "-f docker-compose.split.yml", services: "", flag: --split, web: "http://localhost:8080" }
+          # API and worker open the same fresh database at once on every start, so it is restarted from empty volumes
+          # repeatedly: a startup race that loses one time in five still fails this job.
+          - { name: "split api/worker + web UI", files: "-f docker-compose.split.yml", services: "", flag: --split, web: "http://localhost:8080", fresh_starts: 15 }
     env:
       EXTRA_COMPOSE_FILES: ${{ matrix.extra }}
       WEB_URL: ${{ matrix.web }}
@@ -81,6 +85,20 @@ jobs:
         run: docker compose -f docker-compose.yml ${{ matrix.files }} up --build -d --wait ${{ matrix.services }}
       - name: Scan inside the memory-limited container
         run: ./scripts/e2e-docker.sh ${{ matrix.flag }}
+      - name: Start from empty volumes ${{ matrix.fresh_starts }} times; every container must come up healthy
+        if: matrix.fresh_starts
+        run: |
+          compose="docker compose -f docker-compose.yml ${{ matrix.files }}"
+          for i in $(seq 1 ${{ matrix.fresh_starts }}); do
+            $compose down -v --timeout 5 >/dev/null 2>&1
+            if ! $compose up -d --wait --wait-timeout 120 >/dev/null 2>&1; then
+              echo "::error::fresh start $i of ${{ matrix.fresh_starts }} failed"
+              $compose ps -a
+              $compose logs --tail 50
+              exit 1
+            fi
+            echo "fresh start $i: all healthy"
+          done
       - name: Diagnostics
         if: always()
         run: |

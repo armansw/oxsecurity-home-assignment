@@ -24,6 +24,7 @@ import { DiskWorkspace } from './infrastructure/fs/disk-workspace.js';
 import { GitRepositoryFetcher } from './infrastructure/git/git-repository-fetcher.js';
 import { StreamReportProcessor } from './infrastructure/report/stream-report-processor.js';
 import { FixtureScanner } from './infrastructure/scanner/fixture-scanner.js';
+import { MavenCacheProxy } from './infrastructure/scanner/maven-cache-proxy.js';
 import { TrivyScanner } from './infrastructure/scanner/trivy-scanner.js';
 import { buildApp, buildOpsApp } from './interfaces/http/app.js';
 import { PrometheusMetrics } from './infrastructure/metrics/prometheus-metrics.js';
@@ -52,7 +53,7 @@ async function main(): Promise<void> {
     remote ??
     (config.SCANNER === 'fixture'
       ? new FixtureScanner({ sizeMb: config.FIXTURE_SIZE_MB, criticalRatio: config.FIXTURE_CRITICAL_RATIO })
-      : localTrivy(config));
+      : await localTrivy(config, log));
   const fetcher: RepositoryFetcher = remote ?? new GitRepositoryFetcher({ gitBin: config.GIT_BIN, timeoutMs: config.CLONE_TIMEOUT_MS });
 
   const metrics = new PrometheusMetrics(store);
@@ -178,7 +179,20 @@ async function main(): Promise<void> {
   }
 }
 
-function localTrivy(config: Config): TrivyScanner {
+/**
+ * Trivy, with its Maven lookups going through the mirror and, unless disabled, through a local disk cache in front of
+ * it (ADR-9), so repeat scans of large Java projects do not download the same POMs again.
+ */
+async function localTrivy(config: Config, log: FastifyBaseLogger): Promise<TrivyScanner> {
+  let mavenMirror = config.TRIVY_MAVEN_MIRROR === '' ? undefined : config.TRIVY_MAVEN_MIRROR;
+  if (mavenMirror !== undefined && config.TRIVY_MAVEN_CACHE_MB > 0 && !config.TRIVY_OFFLINE_SCAN) {
+    mavenMirror = await new MavenCacheProxy({
+      upstream: mavenMirror,
+      dir: config.mavenCacheDir,
+      maxBytes: config.TRIVY_MAVEN_CACHE_MB * 1024 * 1024,
+      log: log.child({ component: 'maven-cache' }),
+    }).start();
+  }
   return new TrivyScanner({
     trivyBin: config.TRIVY_BIN,
     timeoutMs: config.SCAN_TIMEOUT_MS,
@@ -188,7 +202,7 @@ function localTrivy(config: Config): TrivyScanner {
     goMemLimit: config.TRIVY_GOMEMLIMIT,
     goGc: config.TRIVY_GOGC,
     offlineScan: config.TRIVY_OFFLINE_SCAN,
-    mavenMirror: config.TRIVY_MAVEN_MIRROR === '' ? undefined : config.TRIVY_MAVEN_MIRROR,
+    mavenMirror,
   });
 }
 
@@ -196,7 +210,7 @@ function localTrivy(config: Config): TrivyScanner {
 async function runScannerAgent(config: Config, log: FastifyBaseLogger): Promise<void> {
   const app = buildScannerAgentApp({
     fetcher: new GitRepositoryFetcher({ gitBin: config.GIT_BIN, timeoutMs: config.CLONE_TIMEOUT_MS }),
-    scanner: localTrivy(config),
+    scanner: await localTrivy(config, log),
     workDir: config.WORK_DIR,
     token: config.SCANNER_TOKEN ?? '',
     allowedHosts: config.ALLOWED_GIT_HOSTS,
