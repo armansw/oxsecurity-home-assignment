@@ -5,7 +5,7 @@ A Node.js + TypeScript service that wraps the [Trivy](https://trivy.dev) scanner
 [![CI](https://github.com/armansw/oxsecurity-home-assignment/actions/workflows/ci.yml/badge.svg)](https://github.com/armansw/oxsecurity-home-assignment/actions/workflows/ci.yml)
 
 - **Live:** https://oxhometask.armstep.com. Scan any public repository, watch live memory against the limit, or press **Run self-test** to scan 1–100 large repositories.
-- **Video:** [docs/demo.mp4](docs/demo.mp4) (34 s)
+- **Video:** [docs/demo.mp4](docs/demo.mp4) (57 s, recorded on the live service: a REST scan of NodeGoat, then a self-test of three large repositories under the 150 MB limit)
 
 ![Architecture](docs/architecture.svg)
 
