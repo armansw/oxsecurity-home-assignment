@@ -89,6 +89,19 @@ describe('MavenCacheProxy', () => {
     expect(fs.existsSync(path.join(dir ?? '', 'com'))).toBe(false);
   });
 
+  it('remembers a missing released POM for a while instead of asking again', async () => {
+    dir = tempDir();
+    const missing = 'com/acme/own-module/1.0/own-module-1.0.pom';
+    const upstream = fakeUpstream({});
+    proxy = new MavenCacheProxy({ upstream: 'https://mirror.test/maven2/', dir, maxBytes: 1 << 20, log: recordingLogger(), fetchImpl: upstream.fetchImpl, notFoundTtlMs: 200 });
+    const base = await proxy.start();
+    for (let i = 0; i < 5; i += 1) expect((await fetch(`${base}${missing}`)).status).toBe(404);
+    expect(upstream.calls).toHaveLength(1);
+    await new Promise((r) => setTimeout(r, 250));
+    expect((await fetch(`${base}${missing}`)).status).toBe(404);
+    expect(upstream.calls).toHaveLength(2); // asked again once the entry expired
+  });
+
   it('never caches snapshots or metadata, which change', async () => {
     const meta = 'com/acme/x/maven-metadata.xml';
     const snap = 'com/acme/x/1.0-SNAPSHOT/x-1.0-SNAPSHOT.pom';

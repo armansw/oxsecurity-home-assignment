@@ -17,8 +17,13 @@ export interface MavenCacheProxyOptions {
   readonly maxBytes: number;
   readonly log: Logger;
   readonly upstreamTimeoutMs?: number;
+  /** How long a 404 for a released POM is remembered (in memory). Trivy asks for a project's own modules, which are
+   *  not on Maven Central, dozens of times per scan. */
+  readonly notFoundTtlMs?: number;
   readonly fetchImpl?: typeof fetch;
 }
+
+const NOT_FOUND_MAX_ENTRIES = 10_000;
 
 /** Released POMs never change once published (Maven Central forbids it), so they are cached without expiry. */
 export function isCacheable(repoPath: string): boolean {
@@ -56,6 +61,8 @@ export class MavenCacheProxy {
   private pruning: Promise<void> | undefined;
   private readonly upstream: string;
   private readonly fetchImpl: typeof fetch;
+  /** Released POMs the upstream answered 404 for, with when to ask again. Bounded; oldest entries go first. */
+  private readonly notFound = new Map<string, number>();
 
   constructor(private readonly opts: MavenCacheProxyOptions) {
     this.upstream = opts.upstream.endsWith('/') ? opts.upstream : `${opts.upstream}/`;
@@ -144,6 +151,12 @@ export class MavenCacheProxy {
    * for the same file meanwhile wait for that download instead of starting their own.
    */
   private async miss(repoPath: string, req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    const retryAt = this.notFound.get(repoPath);
+    if (retryAt !== undefined && retryAt > Date.now()) {
+      res.writeHead(404, { 'x-cache': 'HIT' }).end();
+      return;
+    }
+    this.notFound.delete(repoPath);
     const pending = this.inflight.get(repoPath);
     if (pending !== undefined) {
       if ((await pending) && (await this.serveCached(repoPath, req, res))) return;
@@ -156,6 +169,7 @@ export class MavenCacheProxy {
     try {
       const upstream = await this.fetchUpstream(repoPath, 'GET');
       if (upstream.status !== 200 || upstream.body === null) {
+        if (upstream.status === 404) this.rememberNotFound(repoPath);
         await this.forward(upstream, req, res);
         return;
       }
@@ -166,6 +180,14 @@ export class MavenCacheProxy {
       this.inflight.delete(repoPath);
     }
     if (!(await this.serveCached(repoPath, req, res))) throw new Error('cached file disappeared'); // evicted at once
+  }
+
+  private rememberNotFound(repoPath: string): void {
+    if (this.notFound.size >= NOT_FOUND_MAX_ENTRIES) {
+      const oldest = this.notFound.keys().next();
+      if (oldest.done !== true) this.notFound.delete(oldest.value);
+    }
+    this.notFound.set(repoPath, Date.now() + (this.opts.notFoundTtlMs ?? 10 * 60_000));
   }
 
   private async store(repoPath: string, body: WebReadableStream<Uint8Array>): Promise<void> {
