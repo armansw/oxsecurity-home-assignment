@@ -101,7 +101,7 @@ Six traps still run a streaming parser out of memory. Each is closed in this cod
 
 ## Tests
 
-281 backend and 98 frontend tests, ~99 % line coverage. CI also runs:
+287 backend and 102 frontend tests, ~99 % line coverage. CI also runs:
 
 - **Docker:** the service at 200 MB and at 150 MB, and API and worker as separate containers.
 - **Install:** the one-command run from scratch on Linux, macOS and Windows: download Node and Trivy, build, scan a real repository, stop.

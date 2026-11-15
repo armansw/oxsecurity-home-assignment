@@ -86,14 +86,40 @@ const MIGRATIONS: readonly string[] = [
  */
 export function openDatabase(file: string): Db {
   if (file !== ':memory:') fs.mkdirSync(path.dirname(path.resolve(file)), { recursive: true });
-  const db = new Database(file);
-  db.pragma('journal_mode = WAL');
-  db.pragma('synchronous = NORMAL');
-  db.pragma('foreign_keys = ON');
-  db.pragma('busy_timeout = 5000');
-  db.pragma('cache_size = -4000');
-  migrate(db);
+  const db = new Database(file, { timeout: 5000 });
+  // In split mode the API and the worker open the fresh file at the same moment. Converting it to WAL and the first
+  // read of a WAL file can fail with SQLITE_BUSY at once, without the busy handler (SQLite does that to avoid
+  // deadlocks and during WAL recovery), which killed the worker in CI. Retrying is safe: every step is idempotent.
+  retryWhileBusy(() => {
+    db.pragma('journal_mode = WAL');
+    db.pragma('synchronous = NORMAL');
+    db.pragma('foreign_keys = ON');
+    db.pragma('cache_size = -4000');
+    migrate(db);
+  });
   return db;
+}
+
+const BUSY_RETRY_DEADLINE_MS = 30_000;
+const BUSY_RETRY_PAUSE_MS = 50;
+
+function isBusy(err: unknown): boolean {
+  const code = (err as { code?: unknown } | null)?.code;
+  return typeof code === 'string' && code.startsWith('SQLITE_BUSY');
+}
+
+/** Run `step` again after a short pause while it fails with SQLITE_BUSY, up to a deadline. Synchronous, as SQLite is. */
+export function retryWhileBusy<T>(step: () => T, deadlineMs = BUSY_RETRY_DEADLINE_MS, pauseMs = BUSY_RETRY_PAUSE_MS): T {
+  const giveUpAt = Date.now() + deadlineMs;
+  const pause = new Int32Array(new SharedArrayBuffer(4));
+  for (;;) {
+    try {
+      return step();
+    } catch (err) {
+      if (!isBusy(err) || Date.now() >= giveUpAt) throw err;
+      Atomics.wait(pause, 0, 0, pauseMs);
+    }
+  }
 }
 
 /**

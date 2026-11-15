@@ -4,7 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
 import Database from 'better-sqlite3';
-import { migrate, openDatabase } from '../../src/infrastructure/db/sqlite.js';
+import { migrate, openDatabase, retryWhileBusy } from '../../src/infrastructure/db/sqlite.js';
 import { tempDir } from '../helpers/index.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
@@ -64,4 +64,67 @@ describe('migrations', () => {
     expect(db.prepare(`SELECT COUNT(*) AS n FROM sqlite_master WHERE name = 'test_runs'`).get()).toEqual({ n: 1 });
     db.close();
   }, 30_000);
+
+  // Split mode, one step earlier: switching a fresh database to WAL needs an exclusive lock held by someone else.
+  it('wait for the WAL switch while another process holds the fresh database', async () => {
+    dir = tempDir();
+    const file = path.join(dir, 'wal.db');
+    const holder = new Database(file);
+    holder.exec('CREATE TABLE t (x)'); // still the default rollback journal: nobody has switched to WAL yet
+    holder.exec('BEGIN EXCLUSIVE');
+    holder.exec('INSERT INTO t VALUES (1)');
+    const children = Array.from({ length: 3 }, () => openInChild(file));
+    await new Promise((r) => setTimeout(r, 2000));
+    holder.exec('COMMIT');
+    holder.close();
+
+    const results = await Promise.all(children);
+    expect(results.map((r) => r.stderr)).toEqual(['', '', '']);
+    expect(results.map((r) => r.code)).toEqual([0, 0, 0]);
+  }, 30_000);
+});
+
+// SQLite sometimes answers SQLITE_BUSY at once, skipping the busy handler (deadlock avoidance, WAL recovery); in CI
+// run 43060609329 that killed the split-mode worker on open with "database is locked". Opening now retries.
+describe('retryWhileBusy', () => {
+  const busy = (code = 'SQLITE_BUSY'): Error => Object.assign(new Error('database is locked'), { code });
+
+  it('retries SQLITE_BUSY and its extended codes until the step succeeds', () => {
+    const codes = ['SQLITE_BUSY', 'SQLITE_BUSY_RECOVERY', 'SQLITE_BUSY_SNAPSHOT'];
+    let calls = 0;
+    const result = retryWhileBusy(
+      () => {
+        const code = codes[calls];
+        calls += 1;
+        if (code !== undefined) throw busy(code);
+        return 'opened';
+      },
+      1000,
+      1,
+    );
+    expect(result).toBe('opened');
+    expect(calls).toBe(4);
+  });
+
+  it('rethrows other errors at once', () => {
+    let calls = 0;
+    const fail = (): never => {
+      calls += 1;
+      throw Object.assign(new Error('no such table'), { code: 'SQLITE_ERROR' });
+    };
+    expect(() => retryWhileBusy(fail, 1000, 1)).toThrow('no such table');
+    expect(calls).toBe(1);
+  });
+
+  it('gives up after the deadline with the last error', () => {
+    expect(() =>
+      retryWhileBusy(
+        () => {
+          throw busy();
+        },
+        30,
+        5,
+      ),
+    ).toThrow('database is locked');
+  });
 });
